@@ -1,0 +1,27 @@
+Neutron M693 Hardware Studio 2.1.0 MAX
+=====================================
+
+FIXED
+- CS0121 at ParsedMacro.Parse(): explicit int cast for Math.Min.
+- CS0121 at M693Device(): explicit int cast for InputReportByteLength Math.Max.
+- Build script now references System/System.Core explicitly and embeds the supplied M693 icon.
+
+ADDED
+- Redragon-style dark UI and M693 image/icon assets.
+- Dashboard / device summary.
+- Battery percentage + charging-state query.
+- Current onboard profile query (best-effort; depends on firmware response).
+- Local named Profile Library.
+- Windows pointer settings page.
+- Fire key and wheel action assignments.
+- Advanced RAW action editor.
+- Full 16-slot macro inspection/read.
+- Factory reset command behind double confirmation + automatic backup.
+- Feature matrix and expanded RE protocol notes.
+
+UNCHANGED SAFETY
+- Unknown bytes preserved.
+- Differential writes only.
+- Auto backup before Apply.
+- Read-back verification after writes.
+- Apply blocked if no plain Left Click remains on a physical button.

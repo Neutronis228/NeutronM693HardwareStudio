@@ -1,0 +1,12 @@
+Neutron M693 Hardware Studio 2.1.0 MAX
+
+This archive contains original Neutron source code plus a small set of visual assets
+(mouse/icon/battery images) copied from the REDRAGON M693-RGB installation archive supplied
+by the user in this conversation. They are included only to build/use this private replacement
+configuration tool for that hardware.
+
+No REDRAGON executable or DLL is linked, embedded or required at runtime.
+OemDrv.exe and InitSetup.dll are intentionally NOT redistributed inside Hardware Studio.
+
+The source also documents protocol concepts cross-checked with publicly available
+reverse-engineering projects, but no third-party source code is copied verbatim into this archive.
