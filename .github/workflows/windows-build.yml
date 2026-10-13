@@ -37,7 +37,7 @@ jobs:
       - name: Compile WinForms with .NET Framework
         shell: pwsh
         run: |
-          $src = "src/NeutronM693HardwareStudio.cs"
+          $src = "src\NeutronM693HardwareStudio.cs"
           if (-not (Test-Path $src)) {
             throw "Source missing"
           }
@@ -47,12 +47,12 @@ jobs:
           }
           if (-not (Test-Path $csc)) { throw ".NET Framework csc.exe not available on runner" }
           New-Item -ItemType Directory -Force dist | Out-Null
-          $args = @("/nologo", "/target:winexe", "/platform:anycpu", "/optimize+", "/warn:4",
+          $compilerArguments = @("/nologo", "/target:winexe", "/platform:anycpu", "/optimize+", "/warn:4",
                      "/codepage:65001", "/out:dist/NeutronM693HardwareStudio.exe",
                      "/r:System.dll", "/r:System.Core.dll", "/r:System.Windows.Forms.dll",
                      "/r:System.Drawing.dll", "/r:System.Web.Extensions.dll")
-          if (Test-Path "Assets/appico.ico") { $args += "/win32icon:Assets/appico.ico" }
-          $args += $src
+          if (Test-Path "Assets/appico.ico") { $compilerArguments += "/win32icon:Assets/appico.ico" }
+          $compilerArguments += $src
           & $csc @args
           if ($LASTEXITCODE -ne 0) { throw "csc.exe failed with code $LASTEXITCODE" }
           if (-not (Test-Path "dist/NeutronM693HardwareStudio.exe")) { throw "EXE not produced" }
