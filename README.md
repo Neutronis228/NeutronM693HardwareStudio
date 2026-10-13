@@ -1,3 +1,13 @@
+## Latest Windows-tested development build — 2.6.3 (not hardware-stable)
+
+**Windows CI SUCCESS:** compiled EXE, protocol self-test, and no-device UI smoke test. [View build](https://github.com/Neutronis228/NeutronM693HardwareStudio/actions/runs/38410448116).
+
+- **Source and version history:** [development/v2.6.3-macro-recovery](https://github.com/Neutronis228/NeutronM693HardwareStudio/tree/development/v2.6.3-macro-recovery) and [draft PR #3](https://github.com/Neutronis228/NeutronM693HardwareStudio/pull/3).
+- **New:** choose a checksum-verified **existing mouse macro** and assign it to a physical button without rewriting the macro bytes.
+- **Unresolved:** writing new macro EVENT/NAME regions still ACKs but **fails EEPROM read-back**, even for a 2-event macro. Do not repeat experimental writes. A short verified official OemDrv USB capture is needed to compare commands. [Investigation and safe capture procedure](https://github.com/Neutronis228/NeutronM693HardwareStudio/blob/development/v2.6.3-macro-recovery/docs/MACRO_WRITE_RESEARCH_UA.md).
+- User-defined 2–8-color palette is still a local preview, **not** confirmed onboard RGB hardware animation.
+- The development EXE is *not digitally signed* and has **not** passed the physical M693 macro-write acceptance test.
+
 # Neutron M693 Hardware Studio
 
 > **Unofficial community application** for configuring the Redragon TRIDENT M693-RGB mouse on Windows. Development is experimental; **do not assume all builds are stable**.
