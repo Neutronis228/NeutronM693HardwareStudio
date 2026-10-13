@@ -53,7 +53,8 @@ jobs:
                      "/r:System.Drawing.dll", "/r:System.Web.Extensions.dll")
           if (Test-Path "Assets/appico.ico") { $compilerArguments += "/win32icon:Assets/appico.ico" }
           $compilerArguments += $src
-          & $csc @args
+          Write-Host ('Compiler source: ' + $src)
+          & $csc @compilerArguments
           if ($LASTEXITCODE -ne 0) { throw "csc.exe failed with code $LASTEXITCODE" }
           if (-not (Test-Path "dist/NeutronM693HardwareStudio.exe")) { throw "EXE not produced" }
           if (Test-Path "Assets") { Copy-Item "Assets" "dist/Assets" -Recurse -Force }
