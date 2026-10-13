@@ -1,0 +1,10 @@
+1.1.0
+- повністю прибрана вимога Button4=Back / Button5=Forward;
+- прямий RAW HID input;
+- навчання фізичних Button 4 / Button 5 за press-hold-release;
+- збереження HID fingerprint + byte/mask binding;
+- reconnect-friendly fingerprint matching;
+- HID diagnostics export;
+- optional scoped suppression of the old L/R macro while the learned physical
+  side button is held; own SendInput events are tagged and not suppressed;
+- smooth correlated delay generator retained from 1.0.0.
