@@ -3165,9 +3165,33 @@ namespace NeutronM693HardwareStudio
             // A new macro must be successfully verified before the profile is remapped.
             foreach (int slot in Enumerable.Range(0, 16))
             {
-                if (used.Contains(slot) || _macroSlots.ContainsKey(slot) || _pendingMacroSlots.ContainsKey(slot)) continue;
-                return slot;
+                if (used.Contains(slot) || _pendingMacroSlots.ContainsKey(slot)) continue;
+                byte[] raw;
+                if (!_macroSlots.TryGetValue(slot, out raw))
+                {
+                    // Examine the FULL slot before choosing it. An unreferenced slot can
+                    // still contain a real, user-created macro.
+                    if (_device == null || _device.IsClosed) return -1;
+                    try
+                    {
+                        raw = _device.ReadBytes((ushort)(M693Profile.MacroBase + slot * M693Profile.MacroSlotSize), M693Profile.MacroSlotSize);
+                        _macroSlots[slot] = raw;
+                        _parsedMacros[slot] = ParsedMacro.Parse(slot, raw);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("EMPTY_SLOT_PROBE_FAIL slot=" + slot + ": " + ex.Message);
+                        continue;
+                    }
+                }
+                bool blank = raw.All(x => x == 0) || raw.All(x => x == 0xFF);
+                if (blank)
+                {
+                    Log("SELECT_VERIFIED_EMPTY_MACRO_SLOT=" + slot + " (no existing macro overwritten)");
+                    return slot;
+                }
             }
+            Log("NO_VERIFIED_EMPTY_MACRO_SLOT: refusing to overwrite an unreferenced user macro.");
             return -1;
         }
 
@@ -3494,6 +3518,18 @@ namespace NeutronM693HardwareStudio
 
                 foreach (var stale in _pendingMacroSlots.Keys.Where(k => !referencedAfterApply.Contains(k) && !_explicitMacroWrites.Contains(k)).ToArray())
                     Log("SKIP stale pending macro #" + stale + " — profile no longer references this slot.");
+
+                // The user's firmware ACKs EEPROM cmd 0x07 but fails to persist
+                // events on different attempts. Reconfirm explicitly before every
+                // experimental new macro write. Existing macro bindings skip this.
+                if (macrosToWrite.Length > 0 && MessageBox.Show(this,
+                    "УВАГА: запис НОВИХ подій макросів ще НЕ підтверджено на цій M693.\r\n" +
+                    "Попередні спроби повертали ACK, але read-back не збігався.\r\n" +
+                    "Перед продовженням створено резервну копію.\r\n" +
+                    "Якщо потрібен готовий старий макрос — використовуйте 'Існуючі макроси'.\r\n\r\n" +
+                    "Спробувати експериментальний запис?", "Неперевірений запис macro-slot",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    throw new OperationCanceledException("Нові макроси не записувалися: користувач відмовився від експериментального запису.");
 
                 var referencedCombosAfterApply = new HashSet<int>(M693Profile.ReferencedComboSlots(_pendingProfile));
                 var combosToWrite = _pendingComboSlots
