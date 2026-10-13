@@ -27,9 +27,9 @@ jobs:
           $args = @('/nologo','/target:winexe','/platform:anycpu','/optimize+','/warn:4','/codepage:65001',
             '/r:System.dll','/r:System.Core.dll','/r:System.Windows.Forms.dll',
             '/r:System.Drawing.dll','/r:System.Web.Extensions.dll',
-            '/out:dist/NeutronM693HardwareStudio.exe')
-          if (Test-Path 'Assets/appico.ico') { $args += '/win32icon:Assets/appico.ico' }
-          $args += 'src/NeutronM693HardwareStudio.cs'
+            ('/out:' + (Join-Path (Get-Location) 'dist\NeutronM693HardwareStudio.exe')))
+          if (Test-Path 'Assets/appico.ico') { $args += ('/win32icon:' + (Join-Path (Get-Location) 'Assets\appico.ico')) }
+          $args += (Join-Path (Get-Location) 'src\NeutronM693HardwareStudio.cs')
           & $csc @args *>&1 | Tee-Object -FilePath dist/BUILD_LOG.txt
           if ($LASTEXITCODE -ne 0) { throw "Compiler exited: $LASTEXITCODE" }
           if (-not (Test-Path dist/NeutronM693HardwareStudio.exe)) { throw 'No EXE produced' }
