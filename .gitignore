@@ -1,0 +1,30 @@
+# Windows, Visual Studio, build results
+[Bb]in/
+[Oo]bj/
+.vs/
+*.suo
+*.user
+*.pdb
+*.mdb
+*.cache
+*.log
+*.tmp
+*.bak
+*.exe
+*.dll
+
+# Device state, dumps, credentials, profiles
+Backups/
+Logs/
+*.m693profile.json
+*M693_HID*
+*.bin
+*.hex
+
+# Do not commit proprietary vendor installers/resources
+OemDrv.exe
+InitSetup.dll
+unins*.exe
+REDRAGON*.zip
+ReferenceOriginal/
+_vendor_original/
