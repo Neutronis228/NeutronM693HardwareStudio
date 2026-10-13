@@ -1,3 +1,15 @@
+## 2.6.3 — Macro Recovery development build (13 Oct 2026)
+
+**Windows CI: passed.** [Compilation + parser + startup smoke tests](https://github.com/Neutronis228/NeutronM693HardwareStudio/actions/runs/38410448116). Download the CI-built EXE from the Actions artifact. The full source is on branch `development/v2.6.3-macro-recovery`.
+
+**New:** Choose a physical mouse button, then choose an existing, checksum-valid onboard macro from a new dropdown. The app prepares a **profile-only** binding; it does not rewrite the selected macro's events. This is separate from recording/writing a new macro.
+
+**Still open:** On real M693 hardware the macro-event write command is ACKed but event bytes do not persist. Do **not** treat a protocol ACK as a successful macro write. New-macro writing remains experimental; read-back is mandatory and alternate EEPROM offsets are not guessed. Binding an existing macro to another button still needs a real-device behavior check.
+
+**Safety:** The personal ZIP may contain device pictures supplied by the mouse owner; proprietary Redragon imagery is not part of the MIT-licensed repository. Do not redistribute the vendor installer or artwork.
+
+---
+
 # Neutron M693 Hardware Studio
 
 > **Unofficial community application** for configuring the Redragon TRIDENT M693-RGB mouse on Windows. Development is experimental; **do not assume all builds are stable**.
