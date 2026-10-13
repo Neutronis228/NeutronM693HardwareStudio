@@ -1,0 +1,26 @@
+Швидке налаштування саме вашої Redragon TRIDENT M693-RGB
+========================================================
+
+У Redragon software на сторінці Key Settings:
+
+1 = Left button          (залишити)
+2 = Right button         (залишити)
+3 = Middle button        (залишити)
+4 = Back / Browser Back  (ЗАМІСТЬ Macro - H_Clicking)
+5 = Forward / Browser Forward (ЗАМІСТЬ Macro - H_building)
+6 = як вам потрібно
+7 = як вам потрібно
+
+Потім Apply/Save profile.
+
+У Neutron M693 Smooth Clicker:
+Button 4 = Ліва кнопка
+Button 5 = Права кнопка
+Min = 10 ms
+Typical = 45 ms
+Max = 150 ms
+Smooth = 88%
+
+Тримати кнопку 4 -> серія лівих кліків.
+Тримати кнопку 5 -> серія правих кліків.
+Відпустити -> стоп.
