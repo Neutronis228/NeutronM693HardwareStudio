@@ -16,6 +16,7 @@ namespace NeutronM693HardwareStudio
 {
     internal static class Program
     {
+        internal static string StartupPhase = "Program.Main";
         // CLI smoke test: --smoke-test initializes every WinForms page without touching HID.
         // A failure must result in non-zero exit so GitHub Actions can catch startup crashes.
         [STAThread]
@@ -23,23 +24,44 @@ namespace NeutronM693HardwareStudio
         {
             bool smoke = args != null && Array.Exists(args,
                 delegate(string a) { return string.Equals(a, "--smoke-test", StringComparison.OrdinalIgnoreCase); });
+            bool self = args != null && Array.Exists(args,
+                delegate(string a) { return string.Equals(a, "--self-test", StringComparison.OrdinalIgnoreCase); });
             try
             {
+                if (self) { RunProtocolSelfTest(); return 0; }
+                StartupPhase = "WinForms initialization";
                 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
+                StartupPhase = "MainForm constructor";
+                bool smokeFailed = false;
                 using (MainForm form = new MainForm(smoke))
                 {
                     if (smoke)
                     {
-                        System.Windows.Forms.Timer exitTimer = new System.Windows.Forms.Timer();
-                        exitTimer.Interval = 1500;
-                        exitTimer.Tick += delegate { exitTimer.Stop(); exitTimer.Dispose(); form.Close(); };
-                        form.Shown += delegate { exitTimer.Start(); };
+                        // Exercise all pages after handles are created. No HID access, no EEPROM writes.
+                        form.Shown += delegate
+                        {
+                            form.BeginInvoke((MethodInvoker)delegate
+                            {
+                                try
+                                {
+                                    StartupPhase = "Smoke test: exercise all pages";
+                                    form.RunSmokeTest();
+                                }
+                                catch (Exception ex)
+                                {
+                                    smokeFailed = true;
+                                    LogStartupFailure(ex);
+                                }
+                                finally { form.Close(); }
+                            });
+                        };
                     }
+                    StartupPhase = "Application.Run";
                     Application.Run(form);
                 }
-                return 0;
+                return smokeFailed ? 3 : 0;
             }
             catch (Exception ex)
             {
@@ -55,6 +77,36 @@ namespace NeutronM693HardwareStudio
             }
         }
 
+        // Protocol/model tests need neither WinForms nor the physical mouse.
+        private static void RunProtocolSelfTest()
+        {
+            int[] d = SmoothPatternGenerator.Generate(20, 10, 45, 150, 88, 2601);
+            if (d.Length != 20 || d.Any(ms => ms < 10 || ms > 150))
+                throw new InvalidOperationException("Smooth interval range test failed");
+            byte[] slot = MacroBuilder.BuildFullSlot(4, "NEUTRON_B4_L", 1, d,
+                new byte[] { 0x84, 0x01, 0x00 }, new byte[] { 0x44, 0x01, 0x00 });
+            ParsedMacro parsed = ParsedMacro.Parse(4, slot);
+            if (!parsed.ChecksumOk || parsed.EventCount != 40 || parsed.Name != "NEUTRON_B4_L")
+                throw new InvalidOperationException("Onboard macro codec round-trip failed");
+            if (2 + parsed.EventCount * 5 > 255)
+                throw new InvalidOperationException("Safe macro payload exceeds 255 bytes");
+            // Button #4 -> macro slot #4: first event must be at 0x0920.
+            // The previous implementation wrote the first event BEFORE writing event count,
+            // and firmware returned zero on read-back. Guard the record layout in CI.
+            if (M693Profile.MacroBase + 4 * M693Profile.MacroSlotSize + 32 != 0x0920 ||
+                slot[31] != 40 || slot[32] != 0x84 || slot[33] != 0x01)
+                throw new InvalidOperationException("Macro slot 4 event header/layout regression");
+            byte[] eventBlock = new byte[2 + slot[31] * 5];
+            Array.Copy(slot, 31, eventBlock, 0, eventBlock.Length);
+            byte expectedChecksum = M693Profile.Checksum55(eventBlock.Take(eventBlock.Length - 1).ToArray());
+            if (expectedChecksum != eventBlock[eventBlock.Length - 1])
+                throw new InvalidOperationException("Macro event checksum before write invalid");
+            byte[] button = new byte[] { 0x06, 0x04, 0xFE, M693Profile.Checksum55(new byte[] { 0x06, 0x04, 0xFE }) };
+            if (button.Length != 4 || button[3] != M693Profile.Checksum55(new byte[] { button[0], button[1], button[2] }))
+                throw new InvalidOperationException("Button map checksum failed");
+            Console.WriteLine("PROTOCOL SELF-TEST PASS; events=" + parsed.EventCount);
+        }
+
         private static void LogStartupFailure(Exception ex)
         {
             try
@@ -63,7 +115,9 @@ namespace NeutronM693HardwareStudio
                     "NeutronM693HardwareStudio");
                 Directory.CreateDirectory(folder);
                 File.WriteAllText(Path.Combine(folder, "STARTUP_ERROR.log"),
-                    DateTime.UtcNow.ToString("u") + Environment.NewLine + ex.ToString(), Encoding.UTF8);
+                    DateTime.UtcNow.ToString("u") + " | phase=" + StartupPhase + Environment.NewLine +
+                    "OS=" + Environment.OSVersion + " | CLR=" + Environment.Version + Environment.NewLine +
+                    ex.ToString(), Encoding.UTF8);
             }
             catch { }
         }
@@ -95,7 +149,9 @@ namespace NeutronM693HardwareStudio
         private Button btnRawBackup;
         private Button btnDiscard;
         private TabControl tabs;
-        private FlowLayoutPanel mainNav;
+        private TableLayoutPanel mainNav;
+        private TableLayoutPanel appShell;
+        private int _navColumns;
         private readonly List<Button> mainNavButtons = new List<Button>();
         private Label lblEditState;
         private StatusStrip appStatus;
@@ -108,6 +164,8 @@ namespace NeutronM693HardwareStudio
         private DataGridView gridButtons;
         private DataGridView gridMatrix;
         private ComboBox cmbSimpleAction;
+        private ComboBox cmbExistingMacro;
+        private ComboBox cmbExistingMacroMode;
         private Button btnAssignSimple;
         private TextBox txtCapture;
         private Button btnCapture;
@@ -223,10 +281,10 @@ namespace NeutronM693HardwareStudio
 
         public MainForm(bool smokeTest = false)
         {
-            Text = "Neutron M693 Hardware Studio 2.5.1 RC1";
-            Width = 1380;
-            Height = 900;
-            MinimumSize = new Size(1020, 700);
+            Text = "Neutron M693 Hardware Studio 2.6.3 MACRO RECOVERY";
+            Width = 1430;
+            Height = 880;
+            MinimumSize = new Size(930, 620);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Dpi;
             StartPosition = FormStartPosition.CenterScreen;
             KeyPreview = true;
@@ -272,12 +330,80 @@ namespace NeutronM693HardwareStudio
             KeyDown += MainForm_KeyDown;
         }
 
+        // Avoid setting SplitterDistance and PanelXMinSize while a SplitContainer
+        // still has its small design-time default width (startup regression in 2.3–2.5).
+        private static void ConfigureSplitAfterLayout(SplitContainer split, int preferredPixels, double ratio)
+        {
+            EventHandler fit = delegate
+            {
+                try
+                {
+                    if (split.IsDisposed || split.Orientation != Orientation.Vertical) return;
+                    int usable = split.ClientSize.Width - split.SplitterWidth;
+                    if (usable < 180) return;
+                    int lower = Math.Max(split.Panel1MinSize, 70);
+                    int upper = Math.Min(usable - Math.Max(split.Panel2MinSize, 70), usable - 70);
+                    if (upper < lower) return;
+                    int ideal = Math.Min(preferredPixels, (int)Math.Round(usable * ratio));
+                    int target = Math.Max(lower, Math.Min(upper, ideal));
+                    if (target != split.SplitterDistance) split.SplitterDistance = target;
+                }
+                catch (ArgumentException) { /* layout can briefly be too small */ }
+                catch (InvalidOperationException) { /* layout can briefly be too small */ }
+            };
+            split.SizeChanged += fit;
+            split.HandleCreated += fit;
+        }
+
+        public void RunSmokeTest()
+        {
+            if (tabs == null || tabs.TabPages.Count < 10)
+                throw new InvalidOperationException("Tabs were not initialized.");
+            if (btnConnect == null || btnApply == null || mainNav == null)
+                throw new InvalidOperationException("Main controls were not initialized.");
+            int oldIndex = tabs.SelectedIndex;
+            Size oldSize = Size;
+            foreach (Size viewport in new Size[] { new Size(980, 640), new Size(1280, 720), new Size(1600, 900) })
+            {
+                Program.StartupPhase = "Smoke viewport: " + viewport.Width + "x" + viewport.Height;
+                Size = viewport;
+                PerformLayout();
+                Application.DoEvents();
+                if (appShell == null || appShell.GetControlFromPosition(0, 2) != tabs)
+                    throw new InvalidOperationException("Tab content not anchored below the header");
+                if (appShell.GetControlFromPosition(0, 0).Bottom > tabs.Top - 30)
+                    throw new InvalidOperationException("Header overlaps page viewport");
+                foreach (Button b in mainNavButtons)
+                    if (b.Right > mainNav.ClientSize.Width + 3 || b.Bottom > mainNav.ClientSize.Height + 3)
+                        throw new InvalidOperationException("Navigation clipped: " + b.Text);
+                for (int i = 0; i < tabs.TabPages.Count; i++)
+                {
+                    Program.StartupPhase = "Smoke page " + i + " at " + viewport.Width + "x" + viewport.Height;
+                    tabs.SelectedIndex = i;
+                    tabs.TabPages[i].PerformLayout();
+                    Application.DoEvents();
+                    foreach (Control c in tabs.TabPages[i].Controls)
+                        if (c is SplitContainer && c.Width > 300)
+                        {
+                            SplitContainer sc = (SplitContainer)c;
+                            int range = sc.Orientation == Orientation.Vertical ? sc.ClientSize.Width : sc.ClientSize.Height;
+                            if (sc.SplitterDistance <= 0 || sc.SplitterDistance >= range)
+                                throw new InvalidOperationException("Invalid split sizing: " + tabs.TabPages[i].Text);
+                        }
+                }
+            }
+            tabs.SelectedIndex = oldIndex >= 0 ? oldIndex : 0;
+            Size = oldSize;
+            Program.StartupPhase = "Smoke test OK";
+        }
+
         private void BuildUi()
         {
             DoubleBuffered = true;
             tips = new ToolTip { AutoPopDelay = 9000, InitialDelay = 500, ReshowDelay = 150, ShowAlways = true };
 
-            var top = new Panel { Dock = DockStyle.Top, Height = 142, Padding = new Padding(16, 12, 16, 10) };
+            Program.StartupPhase = "BuildUi: header";
+            var top = new Panel { Dock = DockStyle.Top, Height = 157, Padding = new Padding(18, 10, 18, 8) };
             var header = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0), Padding = new Padding(0)
@@ -299,8 +425,15 @@ namespace NeutronM693HardwareStudio
             lblStatus = new Label { Left = 4, Top = 38, Width = 520, Height = 23, Text = "●  Очікування M693...", Font = new Font("Segoe UI Semibold", 9.5F) };
             lblOfficial = new Label { Left = 4, Top = 63, Width = 560, Height = 21 };
             lblDevice = new Label { Left = 4, Top = 85, Width = 610, Height = 20, AutoEllipsis = true };
-            lblEditState = new Label { Left = 4, Top = 108, Width = 610, Height = 22, Text = "●  Змін немає", Font = new Font("Segoe UI Semibold", 9F) };
+            lblEditState = new Label { Left = 4, Top = 106, Width = 610, Height = 24, Text = "●  Змін немає", Font = new Font("Segoe UI Semibold", 9F) };
             identity.Controls.AddRange(new Control[] { lblStatus, lblOfficial, lblDevice, lblEditState });
+            identity.Resize += delegate {
+                int max = Math.Max(180, identity.ClientSize.Width - 12);
+                brand.Width = max; lblStatus.Width = max; lblOfficial.Width = max;
+                lblDevice.Width = max; lblEditState.Width = max;
+            };
+            brand.AutoEllipsis = true; lblStatus.AutoEllipsis = true;
+            lblOfficial.AutoEllipsis = true; lblEditState.AutoEllipsis = true;
 
             var commandArea = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
             header.Controls.Add(commandArea, 1, 0);
@@ -347,11 +480,15 @@ namespace NeutronM693HardwareStudio
             tips.SetToolTip(btnApply, "Записати тільки підготовлені зміни в onboard memory, зробити backup і read-back перевірку.");
             tips.SetToolTip(btnDiscard, "Відкинути локальні зміни й повернути редактор до останнього прочитаного стану.");
 
-            mainNav = new FlowLayoutPanel
+            mainNav = new TableLayoutPanel
             {
-                Dock = DockStyle.Top, Height = 46, WrapContents = false, AutoScroll = true,
-                FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(8, 6, 8, 4), Margin = new Padding(0), BackColor = Color.FromArgb(20, 20, 23)
+                Dock = DockStyle.Top, Height = 48, ColumnCount = 11, RowCount = 1,
+                Padding = new Padding(8, 5, 8, 5), Margin = new Padding(0),
+                BackColor = Color.FromArgb(20, 20, 23)
             };
+            for (int navCol = 0; navCol < 11; navCol++)
+                ((TableLayoutPanel)mainNav).ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / 11F));
+            ((TableLayoutPanel)mainNav).RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             tabs = new TabControl
             {
@@ -375,27 +512,56 @@ namespace NeutronM693HardwareStudio
             appStatus.Items.Add(stProfile);
             appStatus.Items.Add(stChanges);
 
-            Controls.Add(tabs);
-            Controls.Add(appStatus);
-            Controls.Add(mainNav);
-            Controls.Add(top);
-            top.BringToFront();
-            mainNav.BringToFront();
-            appStatus.BringToFront();
+            // Explicit four-row shell: the tab viewport NEVER occupies the header/navigation rows.
+            // WinForms Dock=Fill + BringToFront used to cover the first 150px of every page.
+            appShell = new TableLayoutPanel {
+                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4,
+                Margin = Padding.Empty, Padding = Padding.Empty,
+                BackColor = Color.FromArgb(24, 24, 26)
+            };
+            appShell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            appShell.RowStyles.Add(new RowStyle(SizeType.Absolute, 157F));
+            appShell.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            appShell.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            appShell.RowStyles.Add(new RowStyle(SizeType.Absolute, 25F));
+            top.Dock = DockStyle.Fill;
+            mainNav.Dock = DockStyle.Fill;
+            tabs.Dock = DockStyle.Fill;
+            appStatus.Dock = DockStyle.Fill;
+            top.Margin = mainNav.Margin = tabs.Margin = appStatus.Margin = Padding.Empty;
+            appShell.Controls.Add(top, 0, 0);
+            appShell.Controls.Add(mainNav, 0, 1);
+            appShell.Controls.Add(tabs, 0, 2);
+            appShell.Controls.Add(appStatus, 0, 3);
+            Controls.Add(appShell);
+            SizeChanged += delegate { ArrangeMainNavigation(); };
 
+            Program.StartupPhase = "BuildDashboardTab";
             BuildDashboardTab();
+            Program.StartupPhase = "BuildButtonsTab";
             BuildButtonsTab();
+            Program.StartupPhase = "BuildMacroStudioTab";
             BuildMacroStudioTab();
+            Program.StartupPhase = "BuildDpiTab";
             BuildDpiTab();
+            Program.StartupPhase = "BuildLightingTab";
             BuildLightingTab();
+            Program.StartupPhase = "BuildSensorTab";
             BuildSensorTab();
+            Program.StartupPhase = "BuildProfilesTab";
             BuildProfilesTab();
+            Program.StartupPhase = "BuildWindowsTab";
             BuildWindowsTab();
+            Program.StartupPhase = "BuildAdvancedTab";
             BuildAdvancedTab();
+            Program.StartupPhase = "BuildCapabilitiesTab";
             BuildCapabilitiesTab();
+            Program.StartupPhase = "BuildLogTab";
             BuildLogTab();
+            Program.StartupPhase = "BuildMainNavigation";
             BuildMainNavigation();
 
+            Program.StartupPhase = "Finish UI / theme";
             SetEditorsEnabled(false);
             UiTheme.Apply(this);
             btnApply.BackColor = Color.FromArgb(191, 38, 38);
@@ -443,16 +609,47 @@ namespace NeutronM693HardwareStudio
                 int index = i;
                 var b = new Button
                 {
-                    Text = tabs.TabPages[i].Text, Width = 118, Height = 32, FlatStyle = FlatStyle.Flat,
-                    Margin = new Padding(3, 0, 3, 0), Cursor = Cursors.Hand, Font = new Font("Segoe UI Semibold", 9F),
+                    Text = tabs.TabPages[i].Text, Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat,
+                    Margin = new Padding(2, 0, 2, 0), Cursor = Cursors.Hand, Font = new Font("Segoe UI Semibold", 8.6F),
                     BackColor = Color.FromArgb(29, 29, 33), ForeColor = Color.FromArgb(185, 185, 192), UseVisualStyleBackColor = false
                 };
                 b.FlatAppearance.BorderSize = 0;
                 b.FlatAppearance.MouseOverBackColor = Color.FromArgb(47, 47, 53);
+                string fullName = tabs.TabPages[i].Text;
+                tips.SetToolTip(b, fullName);
                 b.Click += delegate { tabs.SelectedIndex = index; RefreshMainNavState(); };
                 mainNavButtons.Add(b);
-                mainNav.Controls.Add(b);
+                mainNav.Controls.Add(b, i, 0);
             }
+            ArrangeMainNavigation();
+            RefreshMainNavState();
+        }
+
+        // At normal window widths, put the navigation in two rows rather than
+        // clipping the tab names or creating a horizontal Windows scrollbar.
+        private void ArrangeMainNavigation()
+        {
+            if (appShell == null || mainNav == null || mainNavButtons.Count == 0) return;
+            int cols = appShell.ClientSize.Width < 1220 ? 6 : 11;
+            if (_navColumns == cols) return;
+            _navColumns = cols;
+            int rows = (mainNavButtons.Count + cols - 1) / cols;
+            appShell.SuspendLayout();
+            mainNav.SuspendLayout();
+            mainNav.Controls.Clear();
+            mainNav.ColumnStyles.Clear();
+            mainNav.RowStyles.Clear();
+            mainNav.ColumnCount = cols;
+            mainNav.RowCount = rows;
+            for (int i = 0; i < cols; i++)
+                mainNav.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / cols));
+            for (int i = 0; i < rows; i++)
+                mainNav.RowStyles.Add(new RowStyle(SizeType.Percent, 100F / rows));
+            for (int i = 0; i < mainNavButtons.Count; i++)
+                mainNav.Controls.Add(mainNavButtons[i], i % cols, i / cols);
+            appShell.RowStyles[1].Height = rows == 1 ? 48 : 78;
+            mainNav.ResumeLayout(true);
+            appShell.ResumeLayout(true);
             RefreshMainNavState();
         }
 
@@ -509,24 +706,12 @@ namespace NeutronM693HardwareStudio
                 Dock = DockStyle.Fill, Orientation = Orientation.Vertical
             };
             page.Controls.Add(split);
-            // WinForms throws InvalidOperationException when min sizes are set before the
-            // docked splitter receives its real width. Defer initial sizing until layout.
-            bool dashboardSplitterReady = false;
-            split.SizeChanged += delegate
-            {
-                if (dashboardSplitterReady || split.Width < 680) return;
-                try
-                {
-                    split.SplitterDistance = Math.Max(180, Math.Min(350, split.Width - 300));
-                    dashboardSplitterReady = true;
-                }
-                catch (InvalidOperationException) { }
-            };
+            ConfigureSplitAfterLayout(split, 350, 0.37);
             split.Panel1.Padding = new Padding(18);
             split.Panel2.Padding = new Padding(18);
             split.Panel1.AutoScroll = true;
             split.Panel2.AutoScroll = true;
-            split.Panel2.AutoScrollMinSize = new Size(760, 760);
+            split.Panel2.AutoScrollMinSize = Size.Empty;
 
             var left = split.Panel1;
             var right = split.Panel2;
@@ -537,58 +722,103 @@ namespace NeutronM693HardwareStudio
             };
             picMouse = new PictureBox
             {
-                Dock = DockStyle.Fill, MinimumSize = new Size(250, 390), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(8)
+                Dock = DockStyle.Fill, MinimumSize = Size.Empty, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(8)
             };
             try
             {
-                string pth = Path.Combine(Application.StartupPath, "Assets", "mouse_nr.png");
-                if (File.Exists(pth)) picMouse.Image = Image.FromFile(pth);
+                string pth = Path.Combine(Application.StartupPath, "Assets", "redragon_original_mouse_nr.png");
+                if (!File.Exists(pth)) pth = Path.Combine(Application.StartupPath, "Assets", "mouse_nr.png");
+                if (File.Exists(pth)) { using (var img = Image.FromFile(pth)) picMouse.Image = new Bitmap(img); }
             }
             catch { }
             left.Controls.Add(picMouse);
             left.Controls.Add(title);
             title.BringToFront();
 
-            var card = new GroupBox { Left = 10, Top = 8, Width = 735, Height = 142, Text = "Підключення / onboard state" };
-            right.Controls.Add(card);
-            lblDashDevice = new Label { Left = 16, Top = 30, Width = 690, Height = 28, Text = "Пристрій: не підключено", AutoEllipsis = true, Font = new Font("Segoe UI Semibold", 9.5F) };
-            lblDashMode = new Label { Left = 16, Top = 62, Width = 690, Height = 24, Text = "Режим: —" };
-            lblDashProfile = new Label { Left = 16, Top = 91, Width = 690, Height = 24, Text = "Onboard profile: —" };
+            // Layout containers follow the viewport: no large fixed AutoScrollMinSize or clipped cards.
+            var content = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4,
+                Margin = new Padding(0), Padding = new Padding(4), BackColor = Color.Transparent
+            };
+            content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 134F));
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 112F));
+            content.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 54F));
+            right.Controls.Add(content);
+
+            var card = new GroupBox { Dock = DockStyle.Fill, Text = "Підключення / onboard state", Margin = new Padding(4) };
+            content.Controls.Add(card, 0, 0);
+            lblDashDevice = new Label { Left = 16, Top = 28, Width = 560, Height = 28, Text = "Пристрій: не підключено", AutoEllipsis = true, Font = new Font("Segoe UI Semibold", 9.5F) };
+            lblDashMode = new Label { Left = 16, Top = 60, Width = 560, Height = 24, Text = "Режим: —" };
+            lblDashProfile = new Label { Left = 16, Top = 92, Width = 560, Height = 24, Text = "Onboard profile: —" };
             card.Controls.AddRange(new Control[] { lblDashDevice, lblDashMode, lblDashProfile });
+            card.Resize += delegate {
+                int w = Math.Max(100, card.ClientSize.Width - 32);
+                lblDashDevice.Width = w; lblDashMode.Width = w; lblDashProfile.Width = w;
+            };
 
-            var batGroup = new GroupBox { Left = 10, Top = 160, Width = 735, Height = 118, Text = "Акумулятор" };
-            lblDashBattery = new Label { Left = 16, Top = 28, Width = 330, Height = 25, Text = "Заряд: —", Font = new Font("Segoe UI Semibold", 9.5F) };
-            prgBattery = new BatteryMeter { Left = 16, Top = 59, Width = 500, Height = 24, Minimum = 0, Maximum = 100, Value = 0 };
-            var btnBat = MakeButton("Оновити заряд", 535, 53, 170, 34, delegate { RefreshBatterySafe(); });
+            var batGroup = new GroupBox { Dock = DockStyle.Fill, Text = "Акумулятор", Margin = new Padding(4) };
+            content.Controls.Add(batGroup, 0, 1);
+            lblDashBattery = new Label { Left = 16, Top = 25, Width = 160, Height = 25, Text = "Заряд: —", Font = new Font("Segoe UI Semibold", 9.5F) };
+            prgBattery = new BatteryMeter { Left = 16, Top = 57, Width = 280, Height = 23, Minimum = 0, Maximum = 100, Value = 0 };
+            var btnBat = MakeButton("Оновити заряд", 302, 51, 142, 36, delegate { RefreshBatterySafe(); });
             batGroup.Controls.AddRange(new Control[] { lblDashBattery, prgBattery, btnBat });
-            right.Controls.Add(batGroup);
+            batGroup.Resize += delegate {
+                btnBat.Left = Math.Max(140, batGroup.ClientSize.Width - 158);
+                prgBattery.Width = Math.Max(80, btnBat.Left - 30);
+            };
 
-            var reportGroup = new GroupBox { Left = 10, Top = 290, Width = 735, Height = 385, Text = "Поточний onboard-профіль — повний технічний звіт" };
+            var reportGroup = new GroupBox { Dock = DockStyle.Fill, Text = "Поточний onboard-профіль · технічний звіт", Margin = new Padding(4), Padding = new Padding(10, 22, 10, 10) };
+            content.Controls.Add(reportGroup, 0, 2);
             txtDashSummary = new TextBox
             {
-                Dock = DockStyle.Fill, Margin = new Padding(12), Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both,
-                WordWrap = false, Font = new Font("Consolas", 9F), BorderStyle = BorderStyle.FixedSingle
+                Dock = DockStyle.Fill, Multiline = true, ReadOnly = true,
+                ScrollBars = ScrollBars.None, WordWrap = true,
+                Font = new Font("Consolas", 9F), BorderStyle = BorderStyle.None,
+                BackColor = Color.FromArgb(20, 20, 23), ForeColor = Color.Gainsboro
             };
-            reportGroup.Padding = new Padding(12, 24, 12, 12);
             reportGroup.Controls.Add(txtDashSummary);
-            right.Controls.Add(reportGroup);
-
-            var btnReset = MakeButton("Factory Reset миші", 10, 692, 210, 36, delegate { FactoryResetMouse(); });
-            var resetInfo = new Label { Left = 235, Top = 698, Width = 500, Height = 42, Text = "Аварійна дія. Перед reset автоматично створюється повний backup поточного профілю та macro slots." };
-            right.Controls.Add(btnReset);
-            right.Controls.Add(resetInfo);
-
-            right.Resize += delegate
+            // Dark page arrows instead of bright native scrollbars. The mouse wheel
+            // still scrolls all of the report text, and the full report is copyable.
+            var reportScrollButtons = new FlowLayoutPanel
             {
-                int w = Math.Max(650, right.ClientSize.Width - 38);
-                card.Width = w; batGroup.Width = w; reportGroup.Width = w;
-                lblDashDevice.Width = w - 34; lblDashMode.Width = w - 34; lblDashProfile.Width = w - 34;
-                int buttonW = 170;
-                prgBattery.Width = Math.Max(260, w - buttonW - 65);
-                btnBat.Left = prgBattery.Right + 18;
-                txtDashSummary.Width = Math.Max(300, reportGroup.ClientSize.Width - 28);
-                resetInfo.Width = Math.Max(320, w - 235);
+                Dock = DockStyle.Right, Width = 34, FlowDirection = FlowDirection.TopDown,
+                WrapContents = false, BackColor = Color.Transparent, Padding = new Padding(0)
             };
+            var reportUp = MakeButton("▲", 0, 0, 30, 33,
+                delegate { ScrollReportLines(txtDashSummary, -7); });
+            var reportDown = MakeButton("▼", 0, 0, 30, 33,
+                delegate { ScrollReportLines(txtDashSummary, 7); });
+            reportScrollButtons.Controls.Add(reportUp);
+            reportScrollButtons.Controls.Add(reportDown);
+            reportGroup.Controls.Add(reportScrollButtons);
+            reportScrollButtons.BringToFront();
+            txtDashSummary.MouseWheel += delegate(object sender, MouseEventArgs e) {
+                ScrollReportLines(txtDashSummary, e.Delta > 0 ? -5 : 5);
+            };
+
+            var resetRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(4) };
+            resetRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 215F));
+            resetRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            content.Controls.Add(resetRow, 0, 3);
+            var btnReset = MakeButton("Factory Reset миші", 0, 0, 210, 36, delegate { FactoryResetMouse(); });
+            btnReset.Dock = DockStyle.Fill;
+            var resetInfo = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft,
+                Text = "Небезпечна дія. Спочатку збережіть RAW backup. Скидання потребує окремого підтвердження." };
+            resetRow.Controls.Add(btnReset, 0, 0);
+            resetRow.Controls.Add(resetInfo, 1, 0);
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        private static void ScrollReportLines(TextBox report, int lines)
+        {
+            if (report == null || report.IsDisposed || !report.IsHandleCreated) return;
+            // EM_LINESCROLL, positive = down; no visible native horizontal scrollbar.
+            SendMessage(report.Handle, 0x00B6, IntPtr.Zero, new IntPtr(lines));
         }
 
         private void BuildProfilesTab()
@@ -1218,35 +1448,40 @@ namespace NeutronM693HardwareStudio
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
-                SplitterWidth = 5
+                // Min sizes are set by scrollable child content, not on the splitter itself.
+                // WinForms has not laid out this split yet; fixed huge minimums crash startup.
+                SplitterWidth = 6
             };
             split.Panel1.AutoScroll = true;
+            split.Panel1.AutoScrollMinSize = new Size(0, 1090);
             split.Panel2.AutoScroll = true;
+            split.Panel2.AutoScrollMinSize = new Size(0, 780);
             page.Controls.Add(split);
-            bool buttonsSplitterReady = false;
-            split.SizeChanged += delegate
-            {
-                if (buttonsSplitterReady || split.Width < 650) return;
-                try
-                {
-                    split.SplitterDistance = Math.Min(650, Math.Max(300, split.Width * 58 / 100));
-                    buttonsSplitterReady = true;
+            ConfigureSplitAfterLayout(split, 650, 0.52);
+            // At ordinary window sizes, stack editor panes instead of pushing them offscreen.
+            EventHandler resizeEditor = delegate {
+                if (split.IsDisposed || !split.IsHandleCreated) return;
+                bool stacked = page.ClientSize.Width < 1250;
+                Orientation orientation = stacked ? Orientation.Horizontal : Orientation.Vertical;
+                if (split.Orientation != orientation) {
+                    try { split.Orientation = orientation; }
+                    catch (ArgumentException) { }
+                    catch (InvalidOperationException) { }
                 }
-                catch (InvalidOperationException) { }
+                try {
+                    int available = stacked ? split.ClientSize.Height - split.SplitterWidth : split.ClientSize.Width - split.SplitterWidth;
+                    if (available > 150) {
+                        int desired = stacked ? (int)(available * 0.52) : (int)(available * 0.51);
+                        int bound = Math.Max(70, Math.Min(available - 70, desired));
+                        if (split.SplitterDistance != bound) split.SplitterDistance = bound;
+                    }
+                } catch (ArgumentException) { }
             };
+            page.SizeChanged += resizeEditor;
+            split.HandleCreated += resizeEditor;
 
             var left = split.Panel1;
             var right = split.Panel2;
-            page.Resize += delegate
-            {
-                try
-                {
-                    int desired = Math.Max(split.Panel1MinSize, Math.Min(720, (int)(page.ClientSize.Width * 0.58)));
-                    if (desired < page.ClientSize.Width - split.Panel2MinSize - split.SplitterWidth)
-                        split.SplitterDistance = desired;
-                }
-                catch { }
-            };
 
             var lbl = new Label
             {
@@ -1330,7 +1565,23 @@ namespace NeutronM693HardwareStudio
             grpKeys.Controls.Add(MakeButton("Призначити DPI Lock", 245, 111, 180, 31, delegate { AssignDpiLock(); }));
             grpKeys.Controls.Add(new Label { Left = 435, Top = 111, Width = 170, Height = 47, Text = "DPI Lock friendly editor обмежено підтвердженим діапазоном ≤ 4000 DPI." });
 
-            var adv = new GroupBox { Text = "Повна матриця 16 слотів (діагностика / інші функції)", Left = 10, Top = 750, Width = 620, Height = 168 };
+            // Selecting a validated macro already present in the mouse writes ONLY the
+            // 4-byte button binding; it does NOT touch the macro storage region.
+            var grpExisting = new GroupBox { Text = "Існуючі макроси в мишці — без переписування подій", Left = 10, Top = 750, Width = 620, Height = 112 };
+            grpExisting.Controls.Add(new Label { Left = 14, Top = 24, Width = 580, Height = 20,
+                Text = "Спершу виберіть фізичну кнопку вище, потім макрос із пам'яті M693:" });
+            cmbExistingMacro = new ComboBox { Left = 14, Top = 48, Width = 270, DropDownStyle = ComboBoxStyle.DropDownList };
+            cmbExistingMacroMode = new ComboBox { Left = 294, Top = 48, Width = 115, DropDownStyle = ComboBoxStyle.DropDownList };
+            cmbExistingMacroMode.Items.AddRange(new object[] { "HOLD", "Repeat 1", "Toggle" });
+            cmbExistingMacroMode.SelectedIndex = 0;
+            grpExisting.Controls.Add(cmbExistingMacro);
+            grpExisting.Controls.Add(cmbExistingMacroMode);
+            grpExisting.Controls.Add(MakeButton("Прив'язати", 420, 46, 170, 31, delegate { AssignExistingMacro(); }));
+            grpExisting.Controls.Add(new Label { Left = 14, Top = 84, Width = 590, Height = 24,
+                Text = "Тільки призначення кнопки (4 байти). Слоти з пошкодженим checksum виключені." });
+            left.Controls.Add(grpExisting);
+
+            var adv = new GroupBox { Text = "Повна матриця 16 слотів (діагностика / інші функції)", Left = 10, Top = 868, Width = 620, Height = 168 };
             gridMatrix = new DataGridView
             {
                 Left = 10, Top = 25, Width = 595, Height = 128,
@@ -1368,7 +1619,7 @@ namespace NeutronM693HardwareStudio
             grpMacro.Controls.Add(numMax);
             y += 42;
             grpMacro.Controls.Add(new Label { Left = 15, Top = y + 4, Width = 150, Text = "Кліків у патерні:" });
-            numPatternClicks = new NumericUpDown { Left = 170, Top = y, Width = 120, Minimum = 5, Maximum = 35, Value = 29 };
+            numPatternClicks = new NumericUpDown { Left = 170, Top = y, Width = 120, Minimum = 5, Maximum = 24, Value = 20 };
             grpMacro.Controls.Add(numPatternClicks);
             y += 40;
             grpMacro.Controls.Add(new Label { Left = 15, Top = y + 2, Width = 110, Text = "Плавність:" });
@@ -1410,6 +1661,33 @@ namespace NeutronM693HardwareStudio
             };
             right.Controls.Add(warn);
             warn.BringToFront();
+            // Fit group cards and tables to the available panel width. Left-side controls
+            // use proportional X/width reflow; vertical wheel scroll remains inside the panel.
+            var leftBlocks = new Control[] { lbl, gridButtons, grpCapture, grpSimple, grpKeys, adv };
+            foreach (Control block in leftBlocks) {
+                if (block is GroupBox) EnableResponsiveChildren(block, 620);
+            }
+            left.Resize += delegate {
+                int width = Math.Max(250, left.ClientSize.Width - 30);
+                foreach (Control block in leftBlocks) block.Width = width;
+            };
+        }
+
+        private static void EnableResponsiveChildren(Control parent, int designWidth)
+        {
+            var positions = parent.Controls.Cast<Control>()
+                .Select(c => new { C = c, X = c.Left, W = c.Width, Dock = c.Dock }).ToArray();
+            EventHandler fit = delegate {
+                if (parent.IsDisposed) return;
+                double factor = Math.Min(1.0, Math.Max(.48, (double)Math.Max(100, parent.ClientSize.Width - 22) / designWidth));
+                foreach (var item in positions) {
+                    if (item.Dock != DockStyle.None) continue;
+                    int x = (int)Math.Round(item.X * factor);
+                    int w = Math.Max(22, (int)Math.Round(item.W * factor));
+                    item.C.SetBounds(x, item.C.Top, w, item.C.Height);
+                }
+            };
+            parent.SizeChanged += fit;
         }
 
         private NumericUpDown MakeNum(int x, int y, decimal value, decimal min, decimal max)
@@ -1422,7 +1700,7 @@ namespace NeutronM693HardwareStudio
         {
             var page = new TabPage("Макроси PRO") { Name = "MacroStudioPage" };
             tabs.TabPages.Add(page);
-            EnablePageScroll(page, 1180, 860);
+            EnablePageScroll(page, 0, 830);
 
             page.Controls.Add(new Label
             {
@@ -1561,6 +1839,38 @@ namespace NeutronM693HardwareStudio
                 Left = 16, Top = 660, Width = 550, Height = 48,
                 Text = "Запис у мишку все одно відбудеться лише через головну кнопку «ЗАСТОСУВАТИ». Macro Studio підтримує mouse, keyboard HID, modifiers і consumer/multimedia HID."
             });
+
+            EnableResponsiveChildren(slotsBox, 505);
+            EnableResponsiveChildren(edit, 595);
+            EventHandler layoutStudio = delegate {
+                int w = Math.Max(200, page.ClientSize.Width - 50);
+                if (page.ClientSize.Width < 1160) {
+                    slotsBox.Left = 20;
+                    slotsBox.Top = 68;
+                    slotsBox.Width = Math.Max(505, w);
+                    edit.Left = 20;
+                    edit.Top = slotsBox.Bottom + 18;
+                    edit.Width = Math.Max(595, w);
+                    page.AutoScrollMinSize = new Size(0, edit.Bottom + 35);
+                } else {
+                    slotsBox.Left = 20;
+                    slotsBox.Top = 68;
+                    int leftW = Math.Max(505, (int)(w * .43));
+                    slotsBox.Width = leftW;
+                    edit.Left = slotsBox.Right + 16;
+                    edit.Top = 68;
+                    edit.Width = Math.Max(595, w - leftW - 16);
+                    page.AutoScrollMinSize = new Size(0, 830);
+                }
+            };
+            page.SizeChanged += layoutStudio;
+            page.HandleCreated += layoutStudio;
+            slotsBox.SizeChanged += delegate {
+                gridMacroStudioSlots.Width = Math.Max(110, slotsBox.ClientSize.Width - 26);
+                readAll.Width = Math.Max(100, (slotsBox.ClientSize.Width - 36) / 2);
+                loadSelected.Left = readAll.Right + 8;
+                loadSelected.Width = Math.Max(100, slotsBox.ClientSize.Width - loadSelected.Left - 12);
+            };
 
             cmbMacroEventType.SelectedIndexChanged += delegate { RefreshMacroEventValues(); };
             RefreshMacroEventValues();
@@ -2314,6 +2624,8 @@ namespace NeutronM693HardwareStudio
             if (cmbKeyMain != null) cmbKeyMain.Enabled = enabled;
             if (cmbMediaAction != null) cmbMediaAction.Enabled = enabled;
             if (cmbDpiLockAction != null) cmbDpiLockAction.Enabled = enabled;
+            if (cmbExistingMacro != null) cmbExistingMacro.Enabled = enabled;
+            if (cmbExistingMacroMode != null) cmbExistingMacroMode.Enabled = enabled;
             if (gridMacroStudioSlots != null) gridMacroStudioSlots.Enabled = enabled;
             if (gridMacroStudioEvents != null) gridMacroStudioEvents.Enabled = enabled;
             if (numMacroStudioSlot != null) numMacroStudioSlot.Enabled = enabled;
@@ -2410,6 +2722,7 @@ namespace NeutronM693HardwareStudio
                 gridMatrix.Rows.Add(slot, phys, action, Hex(rec));
             }
             RefreshMacroStudioSlots();
+            RefreshExistingMacroChoices();
         }
 
         private string DescribeAction(byte[] rec, bool withMacroName)
@@ -2464,6 +2777,70 @@ namespace NeutronM693HardwareStudio
         {
             int n = SelectedPhysicalButtonNo();
             return _physicalButtons.FirstOrDefault(x => x.Number == n);
+        }
+
+        private void RefreshExistingMacroChoices()
+        {
+            if (cmbExistingMacro == null) return;
+            string before = cmbExistingMacro.SelectedItem as string;
+            string prevKey = before != null && before.Length >= 2 ? before.Substring(0, 2) : "";
+            cmbExistingMacro.BeginUpdate();
+            try
+            {
+                cmbExistingMacro.Items.Clear();
+                foreach (var kv in _macroSlots.OrderBy(kv => kv.Key))
+                {
+                    ParsedMacro pm = ParsedMacro.Parse(kv.Key, kv.Value);
+                    // Existing only: never offer an uncommitted/pending or broken macro.
+                    if (!pm.ChecksumOk || pm.EventCount < 1 || pm.EventCount > 70) continue;
+                    string name = string.IsNullOrWhiteSpace(pm.Name) ? "(без назви)" : pm.Name;
+                    cmbExistingMacro.Items.Add(kv.Key.ToString("D2") + " | " + name + " (" + pm.EventCount + " подій)");
+                }
+                for (int i = 0; i < cmbExistingMacro.Items.Count; i++)
+                {
+                    if (((string)cmbExistingMacro.Items[i]).StartsWith(prevKey + " | "))
+                    {
+                        cmbExistingMacro.SelectedIndex = i;
+                        break;
+                    }
+                }
+                if (cmbExistingMacro.SelectedIndex < 0 && cmbExistingMacro.Items.Count > 0)
+                    cmbExistingMacro.SelectedIndex = 0;
+            }
+            finally { cmbExistingMacro.EndUpdate(); }
+        }
+
+        private void AssignExistingMacro()
+        {
+            if (_pendingProfile == null || cmbExistingMacro == null || cmbExistingMacro.SelectedItem == null) return;
+            PhysicalButtonSpec pb = SelectedPhysicalButton();
+            if (pb == null) { MessageBox.Show(this, "Виберіть фізичну кнопку у верхній таблиці."); return; }
+            string label = cmbExistingMacro.SelectedItem.ToString();
+            int slot;
+            if (label.Length < 2 || !int.TryParse(label.Substring(0, 2), out slot)) return;
+            byte[] raw;
+            if (!_macroSlots.TryGetValue(slot, out raw)) { MessageBox.Show(this, "Спочатку перечитайте макроси з мишки."); return; }
+            ParsedMacro parsed = ParsedMacro.Parse(slot, raw);
+            if (!parsed.ChecksumOk || parsed.EventCount < 1)
+            {
+                MessageBox.Show(this, "Вибраний макрос не пройшов read-only перевірку. Запис скасовано.", "Safety", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            byte repeat = cmbExistingMacroMode.SelectedIndex == 1 ? (byte)1 : (cmbExistingMacroMode.SelectedIndex == 2 ? (byte)253 : (byte)254);
+            byte[] former = M693Profile.GetButtonRecord(_pendingProfile, pb.Slot);
+            // Previously failed pending macro for this button must not become a write side effect.
+            if (former[0] == 6 && former[1] != slot)
+            {
+                _pendingMacroSlots.Remove(former[1]);
+                _explicitMacroWrites.Remove(former[1]);
+            }
+            M693Profile.SetButtonAction(_pendingProfile, pb.Slot, new byte[] { 6, (byte)slot, repeat });
+            Log("ASSIGN EXISTING macro #" + slot + " (" + parsed.Name + ") to physical #" + pb.Number + "; profile-only pending write.");
+            RefreshButtonGrids();
+            RefreshDashboard();
+            RefreshEditState();
+            lblStatus.Text = "Призначення готове: кнопка #" + pb.Number + " → macro #" + slot + ". Дані макросу НЕ перезаписуються.";
+            lblStatus.ForeColor = Color.FromArgb(255, 188, 78);
         }
 
         private void AssignSimpleAction()
@@ -2783,11 +3160,38 @@ namespace NeutronM693HardwareStudio
         private int ChooseMacroSlot(PhysicalButtonSpec pb)
         {
             byte[] cur = M693Profile.GetButtonRecord(_pendingProfile, pb.Slot);
-            if (cur[0] == 6 && cur[1] < 16) return cur[1];
             var used = new HashSet<int>(M693Profile.ReferencedMacroSlots(_pendingProfile));
-            int preferred = pb.Slot;
-            if (preferred >= 0 && preferred < 16 && !used.Contains(preferred)) return preferred;
-            for (int i = 0; i < 16; i++) if (!used.Contains(i)) return i;
+            // Never silently overwrite an existing macro, especially a damaged slot 4.
+            // A new macro must be successfully verified before the profile is remapped.
+            foreach (int slot in Enumerable.Range(0, 16))
+            {
+                if (used.Contains(slot) || _pendingMacroSlots.ContainsKey(slot)) continue;
+                byte[] raw;
+                if (!_macroSlots.TryGetValue(slot, out raw))
+                {
+                    // Examine the FULL slot before choosing it. An unreferenced slot can
+                    // still contain a real, user-created macro.
+                    if (_device == null || _device.IsClosed) return -1;
+                    try
+                    {
+                        raw = _device.ReadBytes((ushort)(M693Profile.MacroBase + slot * M693Profile.MacroSlotSize), M693Profile.MacroSlotSize);
+                        _macroSlots[slot] = raw;
+                        _parsedMacros[slot] = ParsedMacro.Parse(slot, raw);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("EMPTY_SLOT_PROBE_FAIL slot=" + slot + ": " + ex.Message);
+                        continue;
+                    }
+                }
+                bool blank = raw.All(x => x == 0) || raw.All(x => x == 0xFF);
+                if (blank)
+                {
+                    Log("SELECT_VERIFIED_EMPTY_MACRO_SLOT=" + slot + " (no existing macro overwritten)");
+                    return slot;
+                }
+            }
+            Log("NO_VERIFIED_EMPTY_MACRO_SLOT: refusing to overwrite an unreferenced user macro.");
             return -1;
         }
 
@@ -3115,6 +3519,18 @@ namespace NeutronM693HardwareStudio
                 foreach (var stale in _pendingMacroSlots.Keys.Where(k => !referencedAfterApply.Contains(k) && !_explicitMacroWrites.Contains(k)).ToArray())
                     Log("SKIP stale pending macro #" + stale + " — profile no longer references this slot.");
 
+                // The user's firmware ACKs EEPROM cmd 0x07 but fails to persist
+                // events on different attempts. Reconfirm explicitly before every
+                // experimental new macro write. Existing macro bindings skip this.
+                if (macrosToWrite.Length > 0 && MessageBox.Show(this,
+                    "УВАГА: запис НОВИХ подій макросів ще НЕ підтверджено на цій M693.\r\n" +
+                    "Попередні спроби повертали ACK, але read-back не збігався.\r\n" +
+                    "Перед продовженням створено резервну копію.\r\n" +
+                    "Якщо потрібен готовий старий макрос — використовуйте 'Існуючі макроси'.\r\n\r\n" +
+                    "Спробувати експериментальний запис?", "Неперевірений запис macro-slot",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    throw new OperationCanceledException("Нові макроси не записувалися: користувач відмовився від експериментального запису.");
+
                 var referencedCombosAfterApply = new HashSet<int>(M693Profile.ReferencedComboSlots(_pendingProfile));
                 var combosToWrite = _pendingComboSlots
                     .Where(kv => kv.Key >= 0 && kv.Key < 16 && referencedCombosAfterApply.Contains(kv.Key))
@@ -3229,26 +3645,82 @@ namespace NeutronM693HardwareStudio
             return len;
         }
 
+        private static int FirstDifference(byte[] expected, byte[] actual)
+        {
+            int n = Math.Min(expected.Length, actual.Length);
+            for (int i = 0; i < n; i++) if (expected[i] != actual[i]) return i;
+            return expected.Length == actual.Length ? -1 : n;
+        }
+
+        // No false "success": compare exact meaningful macro bytes and show the
+        // first incorrect address, expected and actual value for the firmware trace.
+        private void VerifyMacroSegment(int slot, ushort addr, byte[] expected, string part)
+        {
+            byte[] got = _device.ReadBytes(addr, expected.Length);
+            int off = FirstDifference(expected, got);
+            if (off >= 0) {
+                string want = off < expected.Length ? expected[off].ToString("X2") : "EOF";
+                string actual = off < got.Length ? got[off].ToString("X2") : "EOF";
+                Log("MACRO_VERIFY_FAIL slot=" + slot + " part=" + part + " addr=0x" + (addr + off).ToString("X4") +
+                    " offset=" + off + " expected=" + want + " actual=" + actual + " len=" + expected.Length);
+                int previewStart = Math.Max(0, off - 6);
+                int previewLen = Math.Min(20, expected.Length - previewStart);
+                Log("Expected region: " + BitConverter.ToString(expected, previewStart, previewLen));
+                if (previewStart < got.Length)
+                    Log("Actual region: " + BitConverter.ToString(got, previewStart, Math.Min(previewLen, got.Length - previewStart)));
+                throw new IOException("Macro #" + slot + ": " + part + " не записався. Адреса 0x" +
+                    (addr + off).ToString("X4") + ", очікувано " + want + ", реально " + actual +
+                    ". Деталі у Logs/M693_HID.log; профіль НЕ вважається записаним.");
+            }
+        }
+
         private void WriteMacroSlotSmart(int slot, byte[] target)
         {
             ushort baseAddr = (ushort)(M693Profile.MacroBase + slot * M693Profile.MacroSlotSize);
             int nameLen = MacroNameBlockLength(target);
             int eventLen = MacroEventBlockLength(target);
+            // The 0x09xx macro EVENT writes remain unverified on this firmware.
+            // The UI supports assigning already existing macro slots without this path.
+            if (eventLen > 255)
+                throw new InvalidOperationException("Макрос #" + slot + " має " + eventLen +
+                    " байт подій. Для M693 ще не підтверджена безпечна робота блоку понад 255 байт. " +
+                    "Скоротіть макрос до 50 подій або менше.");
+            ParsedMacro parsed = ParsedMacro.Parse(slot, target);
+            if (!parsed.ChecksumOk)
+                throw new InvalidDataException("Макрос #" + slot + " не проходить локальну перевірку checksum до запису.");
 
-            // The official JM03 utility writes TWO logical records, not a zero-filled 0x180 image:
-            // [nameLen + name] at slot base, then [eventCount + events + checksum] at base+31.
-            // Tail bytes are implementation/private storage and may be normalised by firmware.
-            // 2.2 wrote/verified all 384 bytes, which caused false read-back failures.
             byte[] nameBlock = new byte[nameLen];
             Array.Copy(target, 0, nameBlock, 0, nameLen);
+            // The earlier payload-first transaction always failed at slot 4 + 0x20
+            // (0x0920 on this mouse): the device ACKed writes but read 00 for the
+            // first event byte. The existing slot had event_count=0. On JM03 the
+            // count at slot+31 starts the record and MUST precede event bytes.
+            // Use the established vendor order: NAME, then the WHOLE semantic
+            // [event_count][events][checksum] block written sequentially in 10-byte
+            // packets. Never report success without exact read-back verification.
             byte[] eventBlock = new byte[eventLen];
             Array.Copy(target, 31, eventBlock, 0, eventLen);
-
-            Log("WRITE macro #" + slot + " semantic NAME len=" + nameBlock.Length + " @0x" + baseAddr.ToString("X4"));
+            ushort eventAddr = (ushort)(baseAddr + 31);
+            byte[] priorHeader = _device.ReadBytes(eventAddr, 2);
+            Log("MACRO_TX_START slot=" + slot + " NAME=" + nameLen + " EVENTS=" + eventLen +
+                " count=" + target[31] + " oldCount=" + priorHeader[0] +
+                " eventAddr=0x" + eventAddr.ToString("X4"));
+            Log("MACRO_TX NOTE: avoid pressing this physical mouse button during EEPROM write.");
             _device.WriteBytes(baseAddr, nameBlock);
-            Log("WRITE macro #" + slot + " semantic EVENTS len=" + eventBlock.Length + " @0x" + (baseAddr + 31).ToString("X4"));
-            _device.WriteBytes((ushort)(baseAddr + 31), eventBlock);
-
+            VerifyMacroSegment(slot, baseAddr, nameBlock, "NAME");
+            _device.WriteBytes(eventAddr, eventBlock);
+            Log("MACRO WRITE ACKED (ACK != EEPROM persistence). Verifying exact bytes ...");
+            // Check the count and the very first event before reading the whole block.
+            byte[] first = _device.ReadBytes(eventAddr, Math.Min(10, eventLen));
+            int off = FirstDifference(eventBlock.Take(first.Length).ToArray(), first);
+            if (off >= 0)
+            {
+                Log("MACRO_HEADER_MISMATCH at 0x" + (eventAddr + off).ToString("X4") +
+                    " oldCount=" + priorHeader[0] + " newCount=" + target[31]);
+                byte[] near = _device.ReadBytes(eventAddr, Math.Min(40, M693Profile.MacroSlotSize - 31));
+                Log("MACRO_NEARBY_RAW @ 0x" + eventAddr.ToString("X4") + " = " + Hex(near) + "; NOT trying guessed offsets.");
+            }
+            VerifyMacroSegment(slot, eventAddr, eventBlock, "EVENTS_SEMANTIC");
             VerifyMacroSlotSmart(slot, target);
         }
 
@@ -3261,19 +3733,13 @@ namespace NeutronM693HardwareStudio
             byte[] expectedEvents = new byte[eventLen];
             Array.Copy(target, 0, expectedName, 0, nameLen);
             Array.Copy(target, 31, expectedEvents, 0, eventLen);
-
-            byte[] gotName = _device.ReadBytes(baseAddr, nameLen);
-            byte[] gotEvents = _device.ReadBytes((ushort)(baseAddr + 31), eventLen);
-            if (!gotName.SequenceEqual(expectedName))
-                throw new IOException("Read-back macro slot " + slot + " NAME block не збігся.");
-            if (!gotEvents.SequenceEqual(expectedEvents))
-                throw new IOException("Read-back macro slot " + slot + " EVENTS block не збігся.");
-
+            VerifyMacroSegment(slot, baseAddr, expectedName, "NAME_FINAL");
+            VerifyMacroSegment(slot, (ushort)(baseAddr + 31), expectedEvents, "EVENTS_FINAL");
             byte[] full = _device.ReadBytes(baseAddr, M693Profile.MacroSlotSize);
             ParsedMacro pm = ParsedMacro.Parse(slot, full);
             if (!pm.ChecksumOk)
                 throw new IOException("Read-back macro slot " + slot + " має некоректний checksum.");
-            Log("VERIFY macro #" + slot + " OK: name=\"" + pm.Name + "\" events=" + pm.EventCount + " output=" + pm.DominantOutput);
+            Log("VERIFY macro #" + slot + " OK: name=\"" + pm.Name + "\" events=" + pm.EventCount);
         }
 
         private void WriteDiff(ushort baseAddr, byte[] before, byte[] after, string name)
@@ -4386,6 +4852,20 @@ namespace NeutronM693HardwareStudio
 
     internal static class UiTheme
     {
+        // Best-effort native dark scrollbar theme on supported Windows 10/11 builds.
+        // No requirement on older Windows: any unsupported theme call is ignored.
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetWindowTheme(IntPtr hwnd, string subAppName, string subIdList);
+
+        private static void ApplyNativeDarkTheme(Control c)
+        {
+            if (c == null || c.IsDisposed) return;
+            try { SetWindowTheme(c.Handle, "DarkMode_Explorer", null); }
+            catch (DllNotFoundException) { }
+            catch (EntryPointNotFoundException) { }
+            catch (InvalidOperationException) { }
+        }
+
         private static readonly Color Back = Color.FromArgb(24, 24, 26);
         private static readonly Color Panel = Color.FromArgb(31, 31, 34);
         private static readonly Color Panel2 = Color.FromArgb(39, 39, 43);
@@ -4417,6 +4897,11 @@ namespace NeutronM693HardwareStudio
         {
             foreach (Control c in parent.Controls)
             {
+                if (c is ScrollableControl || c is DataGridView || c is TextBox || c is ListBox)
+                {
+                    c.HandleCreated += delegate { ApplyNativeDarkTheme(c); };
+                    if (c.IsHandleCreated) ApplyNativeDarkTheme(c);
+                }
                 if (c is TabControl)
                 {
                     c.BackColor = Back;
