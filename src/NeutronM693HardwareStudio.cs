@@ -281,7 +281,7 @@ namespace NeutronM693HardwareStudio
 
         public MainForm(bool smokeTest = false)
         {
-            Text = "Neutron M693 Hardware Studio 2.6.3 MACRO RECOVERY";
+            Text = "Neutron M693 Hardware Studio 2.6.4 OEM STREAM RC1";
             Width = 1430;
             Height = 880;
             MinimumSize = new Size(930, 620);
@@ -3677,50 +3677,30 @@ namespace NeutronM693HardwareStudio
         private void WriteMacroSlotSmart(int slot, byte[] target)
         {
             ushort baseAddr = (ushort)(M693Profile.MacroBase + slot * M693Profile.MacroSlotSize);
-            int nameLen = MacroNameBlockLength(target);
-            int eventLen = MacroEventBlockLength(target);
-            // The 0x09xx macro EVENT writes remain unverified on this firmware.
-            // The UI supports assigning already existing macro slots without this path.
-            if (eventLen > 255)
-                throw new InvalidOperationException("Макрос #" + slot + " має " + eventLen +
-                    " байт подій. Для M693 ще не підтверджена безпечна робота блоку понад 255 байт. " +
-                    "Скоротіть макрос до 50 подій або менше.");
+            int semanticLen = 31 + MacroEventBlockLength(target);
+            int eventCount = target[31];
             ParsedMacro parsed = ParsedMacro.Parse(slot, target);
             if (!parsed.ChecksumOk)
-                throw new InvalidDataException("Макрос #" + slot + " не проходить локальну перевірку checksum до запису.");
+                throw new InvalidDataException("Macro #" + slot + " invalid local event checksum.");
+            if (semanticLen > M693Profile.MacroSlotSize)
+                throw new InvalidDataException("Macro #" + slot + " exceeds 0x180-byte slot.");
 
-            byte[] nameBlock = new byte[nameLen];
-            Array.Copy(target, 0, nameBlock, 0, nameLen);
-            // The earlier payload-first transaction always failed at slot 4 + 0x20
-            // (0x0920 on this mouse): the device ACKed writes but read 00 for the
-            // first event byte. The existing slot had event_count=0. On JM03 the
-            // count at slot+31 starts the record and MUST precede event bytes.
-            // Use the established vendor order: NAME, then the WHOLE semantic
-            // [event_count][events][checksum] block written sequentially in 10-byte
-            // packets. Never report success without exact read-back verification.
-            byte[] eventBlock = new byte[eventLen];
-            Array.Copy(target, 31, eventBlock, 0, eventLen);
-            ushort eventAddr = (ushort)(baseAddr + 31);
-            byte[] priorHeader = _device.ReadBytes(eventAddr, 2);
-            Log("MACRO_TX_START slot=" + slot + " NAME=" + nameLen + " EVENTS=" + eventLen +
-                " count=" + target[31] + " oldCount=" + priorHeader[0] +
-                " eventAddr=0x" + eventAddr.ToString("X4"));
-            Log("MACRO_TX NOTE: avoid pressing this physical mouse button during EEPROM write.");
-            _device.WriteBytes(baseAddr, nameBlock);
-            VerifyMacroSegment(slot, baseAddr, nameBlock, "NAME");
-            _device.WriteBytes(eventAddr, eventBlock);
-            Log("MACRO WRITE ACKED (ACK != EEPROM persistence). Verifying exact bytes ...");
-            // Check the count and the very first event before reading the whole block.
-            byte[] first = _device.ReadBytes(eventAddr, Math.Min(10, eventLen));
-            int off = FirstDifference(eventBlock.Take(first.Length).ToArray(), first);
-            if (off >= 0)
-            {
-                Log("MACRO_HEADER_MISMATCH at 0x" + (eventAddr + off).ToString("X4") +
-                    " oldCount=" + priorHeader[0] + " newCount=" + target[31]);
-                byte[] near = _device.ReadBytes(eventAddr, Math.Min(40, M693Profile.MacroSlotSize - 31));
-                Log("MACRO_NEARBY_RAW @ 0x" + eventAddr.ToString("X4") + " = " + Hex(near) + "; NOT trying guessed offsets.");
-            }
-            VerifyMacroSegment(slot, eventAddr, eventBlock, "EVENTS_SEMANTIC");
+            // Static disassembly of the original user-provided OemDrv.exe:
+            // FUN_00410960 serializes a 0x20-byte header + 5 bytes/event.
+            // FUN_00410E..00410F writes ONE contiguous image from 0x300 +
+            // (slot*0x180), including UTF-16LE name and event checksum.
+            // Previous Neutron sent fragmented NAME and EVENTS writes, skipping
+            // bytes in between, and encoded names as ASCII instead of UTF-16LE.
+            byte[] contiguous = new byte[semanticLen];
+            Array.Copy(target, 0, contiguous, 0, semanticLen);
+            byte[] before = _device.ReadBytes(baseAddr, semanticLen);
+            Log("MACRO_OEM_STREAM slot=" + slot + " addr=0x" + baseAddr.ToString("X4") +
+                " len=" + semanticLen + " events=" + eventCount +
+                " name=UTF16LE bytes=" + target[0] + " priorEquals=" + before.SequenceEqual(contiguous));
+            if (!before.SequenceEqual(contiguous))
+                _device.WriteBytes(baseAddr, contiguous);
+            // Never treat an ACK as proof of persistence.
+            VerifyMacroSegment(slot, baseAddr, contiguous, "OEM_CONTIGUOUS_READBACK");
             VerifyMacroSlotSmart(slot, target);
         }
 
@@ -3935,7 +3915,15 @@ namespace NeutronM693HardwareStudio
             int declaredNameLen = (int)raw[0];
             if (declaredNameLen < 0 || declaredNameLen > 30) return m;
             int n = Math.Min(declaredNameLen, 30);
-            m.Name = Encoding.ASCII.GetString(raw, 1, n).TrimEnd('\0');
+            // Compatible with UTF-16LE OEM names and legacy ASCII Neutron names.
+            bool isUnicode = n >= 2 && (n % 2 == 0);
+            if (isUnicode)
+            {
+                int zeroHigh = 0;
+                for (int k = 2; k <= n; k += 2) if (raw[k] == 0) zeroHigh++;
+                isUnicode = zeroHigh >= Math.Max(1, n / 4);
+            }
+            m.Name = (isUnicode ? Encoding.Unicode.GetString(raw, 1, n) : Encoding.ASCII.GetString(raw, 1, n)).TrimEnd('\0');
             int count = raw[31];
             if (count < 0 || count > 70 || 32 + count * 5 >= raw.Length) return m;
             m.EventCount = count;
@@ -3997,10 +3985,8 @@ namespace NeutronM693HardwareStudio
             if (intervals == null || intervals.Length == 0) throw new ArgumentException("intervals");
             if (intervals.Length * 2 > 70) throw new ArgumentException("Забагато macro events");
             byte[] raw = new byte[M693Profile.MacroSlotSize];
-            byte[] nb = Encoding.ASCII.GetBytes(name ?? "NEUTRON");
-            if (nb.Length > 30) Array.Resize(ref nb, 30);
-            raw[0] = (byte)nb.Length;
-            Array.Copy(nb, 0, raw, 1, nb.Length);
+            // The OEM encodes macro names in UTF-16LE; 15 chars / 30 bytes.
+            SetOfficialMacroName(raw, name ?? "NEUTRON");
 
             int count = intervals.Length * 2;
             raw[31] = (byte)count;
@@ -4026,10 +4012,7 @@ namespace NeutronM693HardwareStudio
             if (events == null || events.Count < 1) throw new ArgumentException("events");
             if (events.Count > 70) throw new ArgumentException("Максимум 70 macro events");
             byte[] raw = new byte[M693Profile.MacroSlotSize];
-            byte[] nb = Encoding.ASCII.GetBytes(string.IsNullOrWhiteSpace(name) ? ("MACRO_" + slot) : name);
-            if (nb.Length > 30) Array.Resize(ref nb, 30);
-            raw[0] = (byte)nb.Length;
-            Array.Copy(nb, 0, raw, 1, nb.Length);
+            SetOfficialMacroName(raw, string.IsNullOrWhiteSpace(name) ? ("MACRO_" + slot) : name);
             raw[31] = (byte)events.Count;
             int o = 32;
             foreach (MacroEventRaw ev in events)
@@ -4040,6 +4023,15 @@ namespace NeutronM693HardwareStudio
             Array.Copy(raw, 31, block, 0, block.Length);
             raw[o] = M693Profile.Checksum55(block);
             return raw;
+        }
+
+        private static void SetOfficialMacroName(byte[] raw, string name)
+        {
+            if (name.Length > 15) name = name.Substring(0, 15);
+            byte[] nb = Encoding.Unicode.GetBytes(name);
+            if (nb.Length > 30) Array.Resize(ref nb, 30);
+            raw[0] = (byte)nb.Length;
+            Array.Copy(nb, 0, raw, 1, nb.Length);
         }
 
         private static void WriteEvent(byte[] raw, ref int o, byte b0, byte b1, byte b2, ushort delay)
