@@ -1,0 +1,37 @@
+NEUTRON M693 HARDWARE STUDIO 2.3.0 PRO — FEATURE MATRIX
+========================================================
+
+[WORKING / DIRECT HARDWARE]
+- Auto-detect M693 VID 25A7 PID FA7B/FA7C
+- Split FF02 command / FF01 response HID architecture
+- Battery % / charging
+- Read/write onboard profile + checksums
+- 7 physical buttons + 16-slot matrix
+- Existing macro name/mode/reference decode
+- Smooth onboard macro HOLD mode
+- Semantic macro write/read-back
+- DPI stages + colors
+- RGB stock modes + base color + speed + brightness
+- Polling / debounce / LOD / sleep
+- Motion Sync / Angle Snapping / Ripple / LED-off-moving
+- Profiles / JSON import-export / RAW backups
+- Windows pointer settings
+- Factory reset with pre-backup
+
+[PRO UX]
+- Scrollable/responsive pages
+- Full dashboard report
+- Macro curve preview
+- Pattern length control
+- Palette Lab metadata + gradient preview
+
+[KNOWN HARDWARE LIMITATION]
+- Known RGB EEPROM record has one base RGB color only. Stock multi-color effects are firmware-defined.
+- Arbitrary 2/5-color onboard palette requires an as-yet unconfirmed RAM/firmware command.
+- Hardware Studio intentionally does not emulate RGB by high-frequency EEPROM writes.
+
+[NEXT RE TARGETS]
+- Friendly keyboard/media combo editor
+- General macro event editor/recorder
+- Exact RGB/Profile switch encodings
+- Firmware/version query and safe updater only after protocol confirmation

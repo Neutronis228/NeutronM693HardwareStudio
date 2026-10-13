@@ -1,0 +1,23 @@
+Neutron M693 Hardware Studio 2.3.0 PRO
+
+FIX / CORE
+- Macro writer now uses JM03 semantic blocks instead of zero-filling/verifying all 0x180 bytes.
+- Macro verification checks NAME block, EVENTS block and checksum only.
+- Pending macro slots are filtered by current profile references before write.
+- Extra macro slot list is snapshotted before backup mutates pending dictionaries.
+- Existing mouse macro event bytes can be reused as a template for Smooth Macro press/release.
+
+UX
+- AutoScroll on major pages and both button split panels.
+- Responsive tab widths and Smooth Macro panel widths.
+- Larger Dashboard report with full DPI/button/RGB/sensor/macro state.
+- Smooth Macro pattern length 5..35 clicks.
+- Smooth Macro curve graph.
+- RGB Palette Lab with 2..8 colors, gradient preview and profile metadata persistence.
+
+SAFETY
+- Still creates automatic backup before Apply.
+- Writes only referenced macro changes.
+- Profile read-back remains exact.
+- Macro read-back is semantic, matching how JM03/OemDrv stores variable-length records.
+- No high-frequency EEPROM RGB animation.
