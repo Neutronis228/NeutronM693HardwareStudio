@@ -1,0 +1,64 @@
+NEUTRON M693 HARDWARE STUDIO 2.5.0 ULTIMATE — TEST PLAN
+======================================================
+
+0. ПЕРЕД ТЕСТОМ
+- Закрити OemDrv.exe через tray.
+- Не робити Factory Reset.
+- Запустити 2.5 з нової папки.
+- Зберегти RAW backup поточного робочого профілю.
+
+1. SAFE READ-ONLY
+- Дочекатися автопошуку M693.
+- Огляд: перевірити Battery, 2.4 GHz/USB, current profile index.
+- Натиснути «Прочитати» ще раз.
+- Кнопки: звірити 1..7 з реальними призначеннями.
+- RAW: переконатися, що 16 button slots читаються.
+- Макроси PRO: «Прочитати всі 16 слотів», відкрити H_building / Alt_Tab / Neutron macro.
+- НІЧОГО не застосовувати на цьому етапі.
+
+2. MACRO STUDIO LOCAL EDIT ONLY
+- Відкрити вільний macro slot або існуючий Neutron slot.
+- Додати кілька mouse/keyboard events.
+- Змінити delays.
+- Натиснути «Зберегти pending» (без Apply).
+- Переконатися, що status bar показує незаписані зміни.
+- Ctrl+Z -> зміни мають зникнути без запису в мишку.
+
+3. SMOOTH MACRO WRITE
+- Вибрати бокову кнопку 4.
+- Smooth Macro: 10 / 45 / 150 ms, 88%, 20–29 clicks.
+- Створити/прив'язати.
+- Apply.
+- Очікування: backup -> macro NAME write -> EVENTS write -> semantic read-back -> button record -> profile read-back.
+- Після Apply перечитати профіль та протестувати HOLD/Release фізично.
+
+4. KEYBOARD COMBO
+- Вибрати кнопку, яку безпечно тимчасово перепризначити.
+- Наприклад Left Alt + Tab або Ctrl + Shift + A.
+- Підготувати combo і Apply.
+- Перечитати профіль: type 05 має декодуватися як Keyboard/Media Combo.
+- Перевірити фізичне виконання.
+- Повернути кнопку з backup/profile, якщо потрібно.
+
+5. MULTIMEDIA
+- Вибрати Play/Pause або Volume +/-.
+- Apply -> read-back -> фізичний тест.
+
+6. DPI LOCK
+- Вибрати значення <=4000 DPI.
+- Apply -> read-back -> фізичний тест.
+
+7. ONBOARD PROFILE SWITCH (ОКРЕМО, ЕКСПЕРИМЕНТАЛЬНО)
+- ПЕРЕКОНАТИСЯ, що pending changes = 0.
+- Зберегти RAW backup.
+- У Profiles вибрати інший onboard profile.
+- Підтвердити switch.
+- Програма повинна: send 0x0F -> read 0x0E -> reread EEPROM.
+- Якщо 0x0E не підтвердить індекс, більше не тестувати 0x0F і надіслати Logs.
+
+8. ЩО НАДІСЛАТИ ПРИ ПОМИЛЦІ
+- весь текст MessageBox;
+- останній файл з Logs;
+- AUTO_BEFORE_APPLY backup;
+- скрін вкладки, де була дія;
+- НЕ робити Factory Reset без окремої потреби.

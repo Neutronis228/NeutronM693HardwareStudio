@@ -1,0 +1,91 @@
+REDRAGON M693-RGB -> NEUTRON HARDWARE STUDIO 2.5.0 ULTIMATE
+==========================================================
+Основа аудиту: Cfg.ini та en/text.xml з наданої користувачем оригінальної інсталяції + decoded JM03 protocol.
+
+ОРИГІНАЛЬНІ РОЗДІЛИ
+-------------------
+Key Settings       -> Кнопки + Keyboard/Media editor + RAW
+DPI Settings       -> DPI
+Macro              -> Smooth Macro + Макроси PRO
+Lighting           -> RGB + Palette Lab
+Advanced settings  -> Сенсор + Windows
+Profiles           -> Профілі / Import / Export / Library / onboard selector
+Battery            -> Огляд / status bar
+
+КНОПКОВІ ДІЇ
+------------
+Left / Right / Middle / Forward / Back       READY
+Scroll Up / Down / Left / Right              READY
+Disable                                      READY
+DPI Loop / DPI+ / DPI-                       READY
+Polling rate switch                          READY
+Fire key                                     READY
+Double Left / Double Right / Three click     READY via onboard macro
+Macro HOLD / Repeat / Toggle / Until-key     READY in Macro Studio
+Single keyboard key                          READY via combo area
+Modifier + key / two modifiers + key         READY via combo area
+Key combination                              READY within 6-event combo limit
+Multimedia / browser / volume                READY via consumer HID combo
+DPI Lock                                     READY for confirmed low-range encoding
+RGB ON/OFF / RGB Switch                      RAW PRESERVE, friendly encoding not yet claimed
+Profile Switch as button action              RAW PRESERVE until exact button-action mapping confirmed
+Direct onboard profile selector 1..4         GUARDED/EXPERIMENTAL 0x0F + mandatory 0x0E verification
+
+MACRO EDITOR
+------------
+Macro slot list                              READY
+Read existing macro names/events             READY
+Mouse events                                 READY
+Keyboard events                              READY
+Modifier events                              READY
+Multimedia events                            READY
+Per-event delay                              READY
+Reorder/delete/clear                         READY
+Repeat N / HOLD / Toggle / Until any key     READY
+Bind edited macro to physical button         READY
+Semantic checksum/read-back                  READY
+Smooth irregular click generator             READY
+
+MOUSE / SENSOR
+--------------
+Double-click speed              READY (Windows)
+Mouse sensitivity               READY (Windows)
+Scrolling speed                 READY (Windows)
+Enhance pointer precision       READY (Windows)
+Polling Rate                    READY (onboard)
+Brightness / LED effect / speed READY (onboard)
+LOD                             READY
+Ripple control                  READY
+Angle snapping                  READY
+Motion sync                     READY
+Dormancy time                   READY
+Debounce                        READY
+Turn off light when moving      READY
+
+PROFILES / DATA
+---------------
+Current profile read            READY
+Profile V2 import/export        READY
+Local profile library           READY
+Macros in profile file          READY
+Combos in profile file          READY
+Palette metadata                READY
+RAW backup                      READY
+Onboard 1..4 selector           GUARDED/EXPERIMENTAL until first M693 test
+
+NEUTRON EXTRA
+-------------
+- automatic hardware discovery / reconnect
+- backup and recovery-oriented workflow
+- semantic macro/combo verification
+- human-like smooth onboard click curve
+- full macro event editor
+- local profile library
+- technical dashboard / diagnostics
+- Palette Lab without EEPROM animation abuse
+- explicit pending-change model and undo before Apply
+
+НЕ РЕАЛІЗУЄМО НАВМАННЯ
+-----------------------
+Firmware Update: disabled until update protocol is independently and completely confirmed.
+Arbitrary multi-color hardware animation: not written by repeatedly hammering EEPROM; requires a confirmed live/RAM RGB command.

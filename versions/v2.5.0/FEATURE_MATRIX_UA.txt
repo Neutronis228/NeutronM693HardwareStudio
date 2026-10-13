@@ -1,0 +1,53 @@
+NEUTRON M693 HARDWARE STUDIO 2.5.0 ULTIMATE — FEATURE MATRIX
+============================================================
+
+[ПІДТВЕРДЖЕНО НА РЕАЛЬНІЙ M693 / ПОПЕРЕДНІХ ТЕСТАХ]
+✓ Автопошук / ручний пошук VID 25A7 PID FA7B/FA7C
+✓ Split HID: FF02 Feature TX + FF01 Input RX
+✓ Battery % / charging
+✓ Read/write onboard profile + checksums
+✓ 7 фізичних кнопок + повна 16-slot button matrix
+✓ Existing macro names/modes/references
+✓ Smooth Click HOLD macro у самій мишці
+✓ Double-left / Double-right / Triple-left onboard macro generation
+✓ Semantic macro write/read-back
+✓ DPI stages + active stage + DPI colors
+✓ RGB stock modes + base color + speed + brightness
+✓ Polling / debounce / LOD / sleep
+✓ Motion Sync / Angle Snapping / Ripple / LED-off-moving
+✓ Profiles / JSON / local library / RAW backups
+✓ Windows pointer settings
+✓ Factory Reset + backup protection
+
+[НОВЕ У 2.5 — ПОБУДОВАНО НА РОЗШИФРОВАНОМУ JM03/NORDIC FORMAT]
+✓ Macro Studio: 16 slots, до 70 events, mouse/keyboard/media/modifier, delays
+✓ Macro modes: Repeat N / HOLD / Toggle / Until any key
+✓ Explicit edit/write unbound macro slots
+✓ Keyboard single key / 0–2 modifiers + key
+✓ Multimedia / browser / volume consumer HID actions
+✓ Combo area 0x100 + slot*0x20, checksum + semantic read-back
+✓ Friendly DPI Lock для підтвердженого low-range code mapping
+✓ Profile V2 export/import: profile + macros + combos + palette metadata
+~ Onboard profile switch 1..4: read 0x0E confirmed; write 0x0F guarded/experimental до тесту на M693
+
+[NEUTRON-EXCLUSIVE]
+✓ Smooth curve Min / Typical / Max / Smoothness
+✓ Variable pattern length + graph preview
+✓ Pending-change model; nothing writes before Apply
+✓ Ctrl+Z discard local changes
+✓ Automatic pre-Apply backup
+✓ Diff-write + checksum/read-back verification
+✓ Palette Lab metadata/preview
+✓ Full technical dashboard
+✓ HID diagnostics / RAW editor
+✓ Custom dark responsive UI + status bar + compatibility center
+
+[ЩЕ НЕ ПИШЕМО НАВМАННЯ]
+~ RGB ON/OFF / RGB Switch button actions: existing RAW bytes preserved
+~ Some rare profile-switch button action encodings: preserved until exact mapping is verified
+! Firmware updater: intentionally disabled until full update protocol is confirmed
+
+[ГАРАНТІЯ ПРИНЦИПУ]
+Hardware Studio читає live profile і змінює лише ті області, які користувач явно відредагував.
+Невідомі байти не замінюються factory defaults автоматично. Перед критичними записами створюється backup,
+а після запису виконується read-back verification.

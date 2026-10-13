@@ -1,0 +1,18 @@
+NEUTRON M693 HARDWARE STUDIO 2.5.0 ULTIMATE — STATIC RELEASE AUDIT
+========================================================================
+
+[OK] Delimiter/lexical balance — OK
+[OK] Duplicate class names — none
+[OK] 2.5 required symbols — all present
+[OK] Known CS0121 Math.Min(int, byte) regression — explicit cast present
+[OK] Old compiler high-risk syntax — {"interpolated strings": 0, "null conditional": 0, "null coalescing assignment": 0, "nameof": 0, "target typed new": 0, "using declaration": 0}
+[OK] UTF-8 source — 243171 bytes
+
+Important limitation:
+- This Linux build environment does not contain Windows .NET Framework csc.exe.
+- Therefore final WinForms compilation must still be performed by BUILD_WINDOWS.bat on Windows.
+- The source was checked structurally and for the specific compiler ambiguities seen in earlier releases.
+
+Source:
+- Lines: 4543
+- SHA-256: 86e4272f6fa11c411110ddc5b7f1305049dfe40d68face81d6a8c03a96710df8

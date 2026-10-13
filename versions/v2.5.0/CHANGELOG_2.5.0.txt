@@ -1,0 +1,62 @@
+Neutron M693 Hardware Studio 2.5.0 ULTIMATE
+===========================================
+
+MAJOR: MACRO STUDIO
+-------------------
+- New dedicated «Макроси PRO» page.
+- Reads and displays macro slots 0..15.
+- Opens existing macros with name, event count, checksum and reference status.
+- Event editor supports Mouse, Keyboard, Modifier and Multimedia events.
+- Per-event delay editor.
+- Move event up/down, delete, clear.
+- Modes: Repeat N, HOLD, Toggle, Until any key pressed.
+- Save macro as pending without binding, or save + bind to the selected physical button.
+- Explicit macro writes are tracked separately so an intentionally edited unbound slot can still be written.
+- Max 70 macro events enforced.
+
+KEYBOARD / MULTIMEDIA / COMBOS
+------------------------------
+- Added friendly onboard keyboard combo editor on the Buttons page.
+- Supports up to two modifiers + one keyboard key.
+- Added common multimedia / browser / volume / calculator / explorer actions.
+- Added confirmed JM03 combo region handling: 0x100 + slot*0x20.
+- Combo checksum parsing, display, write and read-back verification.
+- Dashboard and button grid now decode combo assignments instead of showing only RAW type 05.
+- Added friendly DPI Lock editor for the low-range mapping that is unambiguous on this profile family.
+
+PROFILES V2
+-----------
+- Export format upgraded to NeutronM693ProfileV2.
+- V2 carries profile bytes, referenced/pending macros, combos and Palette Lab metadata.
+- Import remains backward-compatible with NeutronM693ProfileV1.
+- Local library and automatic backups preserve macro/combo state.
+- Added guarded onboard profile selector 1..4.
+- Active profile read uses 0x0E; switch uses 0x0F and MUST verify 0x0E before considering the operation successful.
+
+WRITE SAFETY
+------------
+- Pending combo count is included in dirty-state / Apply summary.
+- Apply writes combo blocks with semantic checksum verification.
+- Apply writes macro blocks only if referenced or explicitly edited/imported.
+- Stale unreferenced pending combo/macro data is skipped instead of being written silently.
+- Existing unknown button records remain untouched unless explicitly changed.
+
+UI / DESIGN
+-----------
+- Added Macro Studio navigation entry.
+- Macro Studio is scrollable in windowed mode.
+- Dark owner-drawn ComboBox dropdowns remove native white popup interiors.
+- Keyboard/Combo controls were tightened for smaller window widths.
+- Repeat N control is disabled by default while HOLD is selected.
+- Existing adaptive dark header, navigation, status bar, dashboard cards and page scrolling retained.
+
+FIXES
+-----
+- Fixed potential old .NET Framework compiler ambiguity in Math.Min(int, byte) by explicit cast.
+- Preserved the 2.3 semantic macro verification fix: unused bytes in a nominal 0x180 macro slot are never required to match.
+
+NOT YET CLAIMED AS CONFIRMED ON M693
+-----------------------------------
+- Onboard profile SET command 0x0F is guarded/experimental until verified on the user's M693.
+- RGB ON/OFF / RGB Switch rare button encodings are RAW-preserved until exact bytes are confirmed.
+- Firmware flashing is intentionally not enabled.
