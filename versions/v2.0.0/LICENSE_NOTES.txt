@@ -1,0 +1,12 @@
+Neutron M693 Hardware Studio — protocol implementation notes
+
+This archive does NOT redistribute Redragon OemDrv.exe, DLLs, skins, or other proprietary files.
+It contains a clean-room/reverse-engineered implementation of the device protocol based on
+inspection of the user's own installed software and interoperability research.
+
+Public protocol behavior was cross-checked with:
+- VitaminDB/ardor-mouse — MIT
+- LeadSun/lamzu-cfg — MIT / Apache-2.0
+
+The source in this archive was written specifically for this project; it is not a verbatim copy
+of either project.
