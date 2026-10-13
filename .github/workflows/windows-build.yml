@@ -1,0 +1,93 @@
+name: Windows build and startup smoke test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Assets/**'
+      - 'tools/**'
+      - '.github/workflows/windows-build.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'Assets/**'
+      - 'tools/**'
+      - '.github/workflows/windows-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate source
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "src/NeutronM693HardwareStudio.cs")) {
+            Write-Host "::notice::Historical source has not been imported yet. Windows build is not run."
+            exit 0
+          }
+          Write-Host "Source is present."
+
+      - name: Compile WinForms with .NET Framework
+        shell: pwsh
+        run: |
+          $src = "src/NeutronM693HardwareStudio.cs"
+          if (-not (Test-Path $src)) {
+            Write-Host "::notice::No source yet; skipping."
+            exit 0
+          }
+          $csc = Join-Path $env:WINDIR "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
+          if (-not (Test-Path $csc)) {
+            $csc = Join-Path $env:WINDIR "Microsoft.NET/Framework/v4.0.30319/csc.exe"
+          }
+          if (-not (Test-Path $csc)) { throw ".NET Framework csc.exe not available on runner" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $args = @("/nologo", "/target:winexe", "/platform:anycpu", "/optimize+", "/warn:4",
+                     "/codepage:65001", "/out:dist/NeutronM693HardwareStudio.exe",
+                     "/r:System.dll", "/r:System.Core.dll", "/r:System.Windows.Forms.dll",
+                     "/r:System.Drawing.dll", "/r:System.Web.Extensions.dll")
+          if (Test-Path "Assets/appico.ico") { $args += "/win32icon:Assets/appico.ico" }
+          $args += $src
+          & $csc @args
+          if ($LASTEXITCODE -ne 0) { throw "csc.exe failed with code $LASTEXITCODE" }
+          if (-not (Test-Path "dist/NeutronM693HardwareStudio.exe")) { throw "EXE not produced" }
+          if (Test-Path "Assets") { Copy-Item "Assets" "dist/Assets" -Recurse -Force }
+          Copy-Item LICENSE "dist/LICENSE"
+          Copy-Item README.md "dist/README.md"
+
+      - name: Verify process launches, initializes UI and exits
+        shell: pwsh
+        run: |
+          $exe = "dist/NeutronM693HardwareStudio.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Host "::notice::Source not imported; skipping executable smoke test."
+            exit 0
+          }
+          $p = Start-Process -FilePath (Resolve-Path $exe).Path -ArgumentList "--smoke-test" -PassThru
+          try {
+            if (-not $p.WaitForExit(20000)) {
+              $p.Kill()
+              throw "EXE did not exit in 20 seconds. Check startup and --smoke-test."
+            }
+            $p.Refresh()
+            if ($p.ExitCode -ne 0) { throw "EXE exited with $($p.ExitCode); check startup crash log" }
+            Write-Host "Startup smoke test passed."
+          } finally {
+            if (-not $p.HasExited) { $p.Kill() }
+          }
+
+      - name: Upload executable for download
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeutronM693HardwareStudio-Windows
+          path: dist/
+          if-no-files-found: ignore
+          retention-days: 30
