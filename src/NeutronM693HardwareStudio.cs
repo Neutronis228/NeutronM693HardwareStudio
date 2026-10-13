@@ -997,7 +997,8 @@ namespace NeutronM693HardwareStudio
                 M693Profile.SetButtonAction(_pendingProfile, pb.Slot, new byte[] { t, a, b });
                 RefreshButtonGrids();
                 RefreshAdvancedUi();
-                RefreshDashboard();                lblStatus.Text = "RAW action підготовлено. Ще НЕ записано — натисніть Apply.";
+                RefreshDashboard();
+                lblStatus.Text = "RAW action підготовлено. Ще НЕ записано — натисніть Apply.";
                 RefreshEditState();
             }
             catch (Exception ex) { MessageBox.Show(this, ex.Message, "RAW action", MessageBoxButtons.OK, MessageBoxIcon.Error); }
@@ -1996,7 +1997,8 @@ namespace NeutronM693HardwareStudio
                 HidKeyChoice k = cmbMacroEventValue.SelectedItem as HidKeyChoice;
                 if (k == null) return;
                 ev = MacroEventCodec.Keyboard(k.Usage, down, (ushort)numMacroEventDelay.Value);
-            }            else if (cmbMacroEventType.SelectedIndex == 2)
+            }
+            else if (cmbMacroEventType.SelectedIndex == 2)
             {
                 HidModifierChoice k = cmbMacroEventValue.SelectedItem as HidModifierChoice;
                 if (k == null) return;
@@ -2995,7 +2997,8 @@ namespace NeutronM693HardwareStudio
                 lblCapture.Text = result.Summary + " → matched onboard assignment";
             }
             else if (candidates.Count > 1)
-            {                txtCapture.Text = "Неоднозначно: " + string.Join(", ", candidates.Select(x => "#" + x.Number).ToArray());
+            {
+                txtCapture.Text = "Неоднозначно: " + string.Join(", ", candidates.Select(x => "#" + x.Number).ToArray());
                 lblCapture.Text = result.Summary + ". Виберіть потрібну з кандидатів у таблиці.";
             }
             else
@@ -3994,7 +3997,8 @@ namespace NeutronM693HardwareStudio
             raw[31] = (byte)events.Count;
             int o = 32;
             foreach (MacroEventRaw ev in events)
-            {                WriteEvent(raw, ref o, ev.B0, ev.B1, ev.B2, ev.Delay < 1 ? (ushort)1 : ev.Delay);
+            {
+                WriteEvent(raw, ref o, ev.B0, ev.B1, ev.B2, ev.Delay < 1 ? (ushort)1 : ev.Delay);
             }
             byte[] block = new byte[1 + events.Count * 5];
             Array.Copy(raw, 31, block, 0, block.Length);
@@ -4993,7 +4997,8 @@ namespace NeutronM693HardwareStudio
         private IntPtr _mh, _kh;
         private HookProc _mproc, _kproc;
         private System.Windows.Forms.Timer _timer;
-        private int left, right, middle, back, forward, keyboard;        public event EventHandler<CaptureResult> Completed;
+        private int left, right, middle, back, forward, keyboard;
+        public event EventHandler<CaptureResult> Completed;
 
         public void Start(int ms)
         {
