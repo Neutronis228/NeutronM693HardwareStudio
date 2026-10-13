@@ -506,9 +506,22 @@ namespace NeutronM693HardwareStudio
 
             var split = new SplitContainer
             {
-                Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 350, Panel1MinSize = 285, Panel2MinSize = 520
+                Dock = DockStyle.Fill, Orientation = Orientation.Vertical
             };
             page.Controls.Add(split);
+            // WinForms throws InvalidOperationException when min sizes are set before the
+            // docked splitter receives its real width. Defer initial sizing until layout.
+            bool dashboardSplitterReady = false;
+            split.SizeChanged += delegate
+            {
+                if (dashboardSplitterReady || split.Width < 680) return;
+                try
+                {
+                    split.SplitterDistance = Math.Max(180, Math.Min(350, split.Width - 300));
+                    dashboardSplitterReady = true;
+                }
+                catch (InvalidOperationException) { }
+            };
             split.Panel1.Padding = new Padding(18);
             split.Panel2.Padding = new Padding(18);
             split.Panel1.AutoScroll = true;
@@ -1205,13 +1218,22 @@ namespace NeutronM693HardwareStudio
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
-                SplitterDistance = 650,
-                Panel1MinSize = 500,
-                Panel2MinSize = 340
+                SplitterWidth = 5
             };
             split.Panel1.AutoScroll = true;
             split.Panel2.AutoScroll = true;
             page.Controls.Add(split);
+            bool buttonsSplitterReady = false;
+            split.SizeChanged += delegate
+            {
+                if (buttonsSplitterReady || split.Width < 650) return;
+                try
+                {
+                    split.SplitterDistance = Math.Min(650, Math.Max(300, split.Width * 58 / 100));
+                    buttonsSplitterReady = true;
+                }
+                catch (InvalidOperationException) { }
+            };
 
             var left = split.Panel1;
             var right = split.Panel2;
