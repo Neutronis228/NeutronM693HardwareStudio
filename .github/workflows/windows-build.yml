@@ -75,7 +75,15 @@ jobs:
               throw "EXE did not exit in 20 seconds. Check startup and --smoke-test."
             }
             $p.Refresh()
-            if ($p.ExitCode -ne 0) { throw "EXE exited with $($p.ExitCode); check startup crash log" }
+            if ($p.ExitCode -ne 0) {
+              $crash = Join-Path $env:LOCALAPPDATA "NeutronM693HardwareStudio\\STARTUP_ERROR.log"
+              if (Test-Path $crash) {
+                Write-Host "::group::Startup crash diagnostics"
+                Get-Content $crash | ForEach-Object { Write-Host $_ }
+                Write-Host "::endgroup::"
+              }
+              throw "EXE exited with $($p.ExitCode); see startup crash diagnostics above"
+            }
             Write-Host "Startup smoke test passed."
           } finally {
             if (-not $p.HasExited) { $p.Kill() }
