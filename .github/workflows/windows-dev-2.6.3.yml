@@ -1,0 +1,66 @@
+name: Windows 2.6.3 development build
+
+on:
+  push:
+    branches:
+      - development/v2.6.3-macro-recovery
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-and-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile WinForms source with .NET Framework CSC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
+          if (-not (Test-Path $csc)) { throw 'Missing .NET Framework csc.exe' }
+          $args = @('/nologo','/target:winexe','/platform:anycpu','/optimize+','/warn:4','/codepage:65001',
+            '/r:System.dll','/r:System.Core.dll','/r:System.Windows.Forms.dll',
+            '/r:System.Drawing.dll','/r:System.Web.Extensions.dll',
+            '/out:dist/NeutronM693HardwareStudio.exe')
+          if (Test-Path 'Assets/appico.ico') { $args += '/win32icon:Assets/appico.ico' }
+          $args += 'src/NeutronM693HardwareStudio.cs'
+          & $csc @args *>&1 | Tee-Object -FilePath dist/BUILD_LOG.txt
+          if ($LASTEXITCODE -ne 0) { throw "Compiler exited: $LASTEXITCODE" }
+          if (-not (Test-Path dist/NeutronM693HardwareStudio.exe)) { throw 'No EXE produced' }
+          if (Test-Path Assets) { Copy-Item Assets dist/Assets -Recurse -Force }
+
+      - name: Check protocol parser without hardware
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath (Resolve-Path dist/NeutronM693HardwareStudio.exe).Path -ArgumentList '--self-test' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Protocol self-test failed: exit $($p.ExitCode)" }
+
+      - name: Smoke test WinForms layout without hardware
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path dist/NeutronM693HardwareStudio.exe).Path
+          $p = Start-Process -FilePath $exe -ArgumentList '--smoke-test' -PassThru
+          try {
+            if (-not $p.WaitForExit(30000)) { throw 'WinForms smoke test timed out' }
+            $p.Refresh()
+            if ($p.ExitCode -ne 0) { throw "WinForms startup failed: $($p.ExitCode)" }
+          } finally {
+            if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+          }
+
+      - name: Publish CI diagnostic artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Neutron-M693-2.6.3-Windows-Preview
+          path: |
+            dist/**
+            LICENSE
+          if-no-files-found: warn
+          retention-days: 30
