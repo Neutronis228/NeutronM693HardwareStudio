@@ -1,0 +1,54 @@
+REDRAGON M693-RGB -> NEUTRON HARDWARE STUDIO 2.4.0 COMPLETE
+==========================================================
+Основа аудиту: Cfg.ini та en/text.xml із наданої користувачем оригінальної інсталяції.
+
+ОРИГІНАЛЬНІ РОЗДІЛИ
+-------------------
+Key Settings       -> Кнопки + Advanced/RAW
+DPI Settings       -> DPI
+Macro              -> Smooth Macro + macro inspection + profile preservation
+Lighting           -> RGB + Palette Lab
+Advanced settings  -> Сенсор + Windows
+Profiles           -> Профілі / Import / Export / Library
+Battery            -> Огляд / status bar
+
+КНОПКОВІ ДІЇ
+------------
+Left / Right / Middle / Forward / Back        READY
+Scroll Up / Down / Left / Right               READY
+Disable                                      READY
+DPI Loop / DPI+ / DPI-                       READY
+Polling rate switch                          READY
+Fire key                                     READY
+Double Left / Double Right / Three click     READY via onboard macro generation
+Macro HOLD                                   READY (Smooth Macro)
+DPI Lock                                     READ/PRESERVE; friendly editor not yet enabled
+Single key / Key combination / Multimedia    READ/PRESERVE; friendly editor not yet complete
+RGB ON/OFF / RGB Switch / Profile Switch     READ/PRESERVE via RAW until encoding confirmed
+
+MOUSE / SENSOR
+--------------
+Double-click speed              READY (Windows)
+Mouse sensitivity               READY (Windows)
+Scrolling speed                 READY (Windows)
+Enhance pointer precision       READY (Windows)
+Polling Rate                    READY (onboard)
+Brightness / LED effect / speed READY (onboard)
+LOD                             READY
+Ripple control                  READY
+Angle snapping                  READY
+Motion sync                     READY
+Dormancy time                   READY
+Debounce                        READY
+Turn off light when moving      READY
+
+NEUTRON EXTRA
+-------------
+- automatic hardware discovery
+- raw onboard backup and recovery-oriented workflow
+- semantic macro verification
+- human-like smooth click curve stored in the mouse
+- local profile library
+- technical dashboard / diagnostics
+- custom palette design metadata without abusive EEPROM animation writes
+- explicit pending-change model and undo before Apply

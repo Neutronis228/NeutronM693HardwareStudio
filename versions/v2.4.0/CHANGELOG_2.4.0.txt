@@ -1,0 +1,51 @@
+Neutron M693 Hardware Studio 2.4.0 COMPLETE
+===========================================
+
+UI / DESIGN
+-----------
+- New responsive two-column header: live device state on the left, command grid on the right.
+- Replaced native white WinForms tab strip with a custom dark navigation bar.
+- Added persistent bottom status bar: connection, battery, profile and pending-change state.
+- Reworked Overview page into responsive device/battery/report cards.
+- Custom dark battery meter instead of the default Windows ProgressBar.
+- Improved DataGridView styling: header, row height, alternating rows, selection colors.
+- Added a dedicated "Можливості" compatibility page with original-driver parity status.
+- Better behavior in windowed mode and on high-DPI screens.
+
+SAFETY / EDITING
+----------------
+- Apply is disabled when there is nothing to write.
+- Live pending-change indicator shows profile-byte changes, pending macros and dirty editor groups.
+- Added "Скасувати зміни" to roll the editor back to the last read profile without touching the mouse.
+- Warns before closing the application if there are unsaved editor changes.
+- Keyboard shortcuts:
+    F5      rescan M693
+    Ctrl+R  read from mouse
+    Ctrl+S  apply pending changes
+    Ctrl+E  export profile
+    Ctrl+Z  discard pending changes
+
+BUTTONS / MACROS
+----------------
+- Kept all 2.3 semantic macro write/read-back protections.
+- Added user-friendly Double Left Click, Double Right Click and Triple Left Click actions.
+  These are implemented as real onboard macro slots, not a Windows background clicker.
+- Existing unknown/rare button records remain RAW-preserved unless explicitly edited.
+
+ORIGINAL REPLACEMENT SCOPE
+--------------------------
+Confirmed direct hardware coverage remains:
+- auto-detect 25A7:FA7B / FA7C, split FF02/FF01 HID command pair;
+- battery / charging;
+- onboard profile read/write/checksums;
+- 7 physical buttons + 16-slot matrix;
+- macro references and Smooth HOLD macro;
+- DPI stages + colors;
+- 7 stock RGB effects + base color/speed/brightness;
+- polling/debounce/LOD/sleep/Motion Sync/Angle Snapping/Ripple/LED-off-moving;
+- local profiles, JSON import/export, RAW backup, Factory Reset protection;
+- Windows pointer settings.
+
+Rare original actions that are not yet fully mapped to friendly UI are preserved byte-for-byte
+and remain available through Advanced / RAW. Firmware update remains intentionally disabled until
+the update protocol is independently confirmed.

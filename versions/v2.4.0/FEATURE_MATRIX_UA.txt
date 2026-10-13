@@ -1,0 +1,41 @@
+NEUTRON M693 HARDWARE STUDIO 2.4.0 COMPLETE — FEATURE MATRIX
+============================================================
+
+[ПІДТВЕРДЖЕНО НА РЕАЛЬНІЙ M693]
+✓ Автопошук / ручний пошук VID 25A7 PID FA7B/FA7C
+✓ Split HID architecture: FF02 Feature TX + FF01 Input RX
+✓ Battery % / charging
+✓ Read/write onboard profile + checksums
+✓ 7 фізичних кнопок + повна 16-slot matrix
+✓ Читання existing macro names/modes/references
+✓ Smooth Click HOLD macro у самій мишці
+✓ Double-left / Double-right / Triple-left onboard macro actions
+✓ Semantic macro write/read-back
+✓ DPI stages + active stage + DPI colors
+✓ RGB stock modes + base color + speed + brightness
+✓ Polling / debounce / LOD / sleep
+✓ Motion Sync / Angle Snapping / Ripple / LED-off-moving
+✓ Profiles / JSON import-export / local profile library / RAW backups
+✓ Windows pointer settings
+✓ Factory Reset + pre-reset backup
+
+[NEUTRON-EXCLUSIVE]
+✓ Smooth curve Min / Typical / Max / Smoothness
+✓ Variable pattern length with graph preview
+✓ Pending-change model: Apply writes only after explicit confirmation
+✓ Ctrl+Z discard local changes
+✓ Backup + read-back verification around critical writes
+✓ Palette Lab metadata/preview
+✓ Full technical dashboard
+✓ HID diagnostics / RAW editor
+✓ Custom dark responsive UI + status bar + compatibility center
+
+[ОРИГІНАЛЬНА ПРОГРАМА — ЩЕ НЕ ВСЕ МАЄ FRIENDLY EDITOR]
+~ Keyboard / multimedia assignments: existing records are preserved and visible; full friendly editor is still being expanded.
+~ RGB ON/OFF / RGB Switch / Profile Switch rare action encodings: preserved through RAW until exact encoding is confirmed.
+~ General-purpose macro recorder/editor: existing macros are read/preserved; Smooth/fixed click macros are generated natively.
+! Firmware updater: intentionally not enabled without confirmed update protocol.
+
+[ВАЖЛИВА ГАРАНТІЯ]
+Невідомі/рідкісні байти поточного профілю не переписуються "за замовчуванням". Hardware Studio
+читає live profile, змінює лише відомі/явно вибрані області, створює backup та перевіряє read-back.
