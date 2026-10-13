@@ -1,0 +1,12 @@
+Neutron M693 Hardware Studio 2.2.0 AUTO HID
+
+- FIX: Windows exposes JM03 vendor protocol as two HID top-level collections.
+  * command: UsagePage FF02, FeatureReportByteLength=17 (report 0x08)
+  * response: UsagePage FF01, InputReportByteLength=17 (report 0x09)
+  v2.1 incorrectly required Feature=17 and Input>=17 on one collection.
+- Auto detection on startup and every 2.5 s while disconnected.
+- Manual "Пересканувати" remains available.
+- Automatic read of onboard profile after successful pairing.
+- Cleaner action bar, dark owner-drawn tabs, shorter navigation labels.
+- Separate feature and input handles with matched MI_01/COL collections.
+- Existing profile/macro/RGB/DPI/sensor logic preserved.
