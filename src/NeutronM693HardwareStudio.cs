@@ -208,6 +208,13 @@ namespace NeutronM693HardwareStudio
         private Button btnPaletteRemove;
         private Button btnPaletteUseFirst;
         private readonly List<Color> _paletteColors = new List<Color>();
+        private ComboBox cmbHardwareStyle;
+        private TextBox txtHardwareStyleName;
+        private readonly List<HardwareLightingStyle> _hardwareStyles = new List<HardwareLightingStyle>();
+        private bool _loadingHardwareStyles;
+        private static readonly string HardwareStylesFile = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NeutronM693HardwareStudio", "hardware_rgb_styles.json");
 
         private NumericUpDown numDpiCount;
         private ComboBox cmbDpiActive;
@@ -281,7 +288,7 @@ namespace NeutronM693HardwareStudio
 
         public MainForm(bool smokeTest = false)
         {
-            Text = "Neutron M693 Hardware Studio 2.6.5 RGB STUDIO RC1";
+            Text = "Neutron M693 Hardware Studio 2.6.6 HARDWARE RGB STYLES RC1";
             Width = 1430;
             Height = 880;
             MinimumSize = new Size(930, 620);
@@ -2170,6 +2177,34 @@ namespace NeutronM693HardwareStudio
                 Text = "Після вибору кольору натисніть ЗАСТОСУВАТИ. Пресети не виконують фонових USB/EEPROM-записів. Ефект Colorful breathing вмикає вбудовану кольорову анімацію firmware." };
             page.Controls.Add(rgbInfo);
 
+            // Device-persisted custom style = one base RGB colour + genuine OEM effect, speed, brightness.
+            // Arbitrary user-chosen multi-colour transitions are NOT claimed to be supported by firmware.
+            var styleGroup = new GroupBox { Left = 30, Top = 490, Width = 440, Height = 300,
+                Text = "Мої апаратні RGB-стилі — реальний запис у M693" };
+            page.Controls.Add(styleGroup);
+            styleGroup.Controls.Add(new Label { Left = 16, Top = 27, Width = 400, Height = 30,
+                Text = "Створіть власний стиль із кольору, ефекту, швидкості та яскравості." });
+            cmbHardwareStyle = new ComboBox { Left = 16, Top = 65, Width = 402, DropDownStyle = ComboBoxStyle.DropDownList };
+            styleGroup.Controls.Add(cmbHardwareStyle);
+            txtHardwareStyleName = new TextBox { Left = 16, Top = 104, Width = 402,
+                Text = "Мій RGB стиль" };
+            styleGroup.Controls.Add(txtHardwareStyleName);
+            var styleSave = MakeButton("Зберегти стиль", 16, 145, 191, 35,
+                delegate { SaveHardwareLightingStyle(); });
+            var styleLoad = MakeButton("Обрати стиль", 226, 145, 192, 35,
+                delegate { LoadHardwareLightingStyle(); });
+            styleGroup.Controls.Add(styleSave); styleGroup.Controls.Add(styleLoad);
+            var styleApply = MakeButton("ЗАСТОСУВАТИ СТИЛЬ У M693", 16, 192, 402, 39,
+                delegate { ApplyHardwareLightingStyle(); });
+            styleApply.Tag = "primary";
+            styleGroup.Controls.Add(styleApply);
+            var styleRemove = MakeButton("Видалити стиль", 16, 240, 164, 31,
+                delegate { DeleteHardwareLightingStyle(); });
+            styleGroup.Controls.Add(styleRemove);
+            styleGroup.Controls.Add(new Label { Left = 193, Top = 241, Width = 226, Height = 48,
+                Text = "Без циклічних EEPROM-записів. Вбудовані RGB-анімації виконує прошивка." });
+            LoadHardwareLightingStyles();
+
             var palette = new GroupBox
             {
                 Left = 500, Top = 58, Width = 510, Height = 515,
@@ -2218,11 +2253,17 @@ namespace NeutronM693HardwareStudio
                 int available = Math.Max(360, page.ClientSize.Width - 36);
                 bool stacked = available < 1010;
                 palette.Left = stacked ? 15 : Math.Max(480, available / 2);
-                palette.Top = stacked ? 485 : 58;
+                styleGroup.Left = stacked ? 15 : 30;
+                styleGroup.Top = 490;
+                styleGroup.Width = stacked ? available : Math.Min(440, Math.Max(300, palette.Left - 48));
+                cmbHardwareStyle.Width = Math.Max(260, styleGroup.Width - 32);
+                txtHardwareStyleName.Width = Math.Max(260, styleGroup.Width - 32);
+                styleApply.Width = Math.Max(260, styleGroup.Width - 32);
+                palette.Top = stacked ? styleGroup.Bottom + 20 : 58;
                 palette.Width = stacked ? available : Math.Max(480, available - palette.Left);
                 pnlPalettePreview.Width = Math.Max(430, palette.Width - 36);
                 rgbIntro.Width = Math.Max(350, page.ClientSize.Width - 35);
-                page.AutoScrollMinSize = new Size(0, stacked ? palette.Bottom + 25 : 730);
+                page.AutoScrollMinSize = new Size(0, stacked ? palette.Bottom + 25 : Math.Max(825, styleGroup.Bottom + 30));
             };
             page.PerformLayout();
         }
