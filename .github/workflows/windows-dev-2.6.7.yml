@@ -1,0 +1,55 @@
+name: Windows v2.6.7 Hardware RGB styles CI
+on:
+  push:
+    branches:
+      - development/v2.6.7-hardware-rgb-styles
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile .NET Framework WinForms
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+          if (!(Test-Path $csc)) { $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe' }
+          if (!(Test-Path $csc)) { throw 'Missing .NET Framework csc' }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $a = @('/nologo','/target:winexe','/platform:anycpu','/optimize+','/warn:4','/codepage:65001',
+                 '/r:System.dll','/r:System.Core.dll','/r:System.Drawing.dll','/r:System.Windows.Forms.dll','/r:System.Web.Extensions.dll',
+                 ('/out:'+(Join-Path (Get-Location) 'dist/NeutronM693HardwareStudio.exe')))
+          if (Test-Path Assets/appico.ico) { $a += '/win32icon:Assets/appico.ico' }
+          $a += (Join-Path (Get-Location) 'src\NeutronM693HardwareStudio.cs')
+          & $csc @a 2>&1 | Tee-Object -FilePath dist/BUILD_LOG.txt
+          if ($LASTEXITCODE -ne 0) { throw "CSC compile failed $LASTEXITCODE" }
+          if (Test-Path Assets) { Copy-Item -Path Assets -Destination dist/Assets -Recurse -Force }
+      - name: Protocol self-test (no hardware)
+        shell: pwsh
+        run: |
+          $p=Start-Process -FilePath (Resolve-Path dist/NeutronM693HardwareStudio.exe).Path -ArgumentList '--self-test' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Protocol regression failed: $($p.ExitCode)" }
+      - name: WinForms smoke test (no hardware)
+        shell: pwsh
+        run: |
+          $p=Start-Process -FilePath (Resolve-Path dist/NeutronM693HardwareStudio.exe).Path -ArgumentList '--smoke-test' -PassThru
+          try {
+            if (-not $p.WaitForExit(30000)) { throw 'UI smoke timeout' }
+            $p.Refresh()
+            if ($p.ExitCode -ne 0) { throw "UI smoke failed: $($p.ExitCode)" }
+          } finally { if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force } }
+      - name: Upload preview EXE and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeutronM693-2.6.7-Windows-preview
+          path: |
+            dist/**
+            LICENSE
+          if-no-files-found: warn
+          retention-days: 30
