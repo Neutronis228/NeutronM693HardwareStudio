@@ -1,8 +1,8 @@
-name: Windows v2.6.7 Hardware RGB styles CI
+name: Windows v2.6.7 QuickStop CI
 on:
   push:
     branches:
-      - development/v2.6.7-hardware-rgb-styles
+      - development/v2.6.7-quickstop-hold
   pull_request:
   workflow_dispatch:
 permissions:
@@ -50,6 +50,10 @@ jobs:
           name: NeutronM693-2.6.7-Windows-preview
           path: |
             dist/**
+            src/NeutronM693HardwareStudio.cs
+            BUILD_WINDOWS.bat
+            RUN.bat
+            Assets/**
             LICENSE
           if-no-files-found: warn
           retention-days: 30
