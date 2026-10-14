@@ -2186,6 +2186,10 @@ namespace NeutronM693HardwareStudio
                 Text = "Створіть власний стиль із кольору, ефекту, швидкості та яскравості." });
             cmbHardwareStyle = new ComboBox { Left = 16, Top = 65, Width = 402, DropDownStyle = ComboBoxStyle.DropDownList };
             styleGroup.Controls.Add(cmbHardwareStyle);
+            cmbHardwareStyle.SelectedIndexChanged += delegate {
+                if (!_loadingHardwareStyles && SelectedHardwareStyleIndex() >= 0 && txtHardwareStyleName != null)
+                    txtHardwareStyleName.Text = _hardwareStyles[SelectedHardwareStyleIndex()].Name;
+            };
             txtHardwareStyleName = new TextBox { Left = 16, Top = 104, Width = 402,
                 Text = "Мій RGB стиль" };
             styleGroup.Controls.Add(txtHardwareStyleName);
@@ -2259,6 +2263,9 @@ namespace NeutronM693HardwareStudio
                 cmbHardwareStyle.Width = Math.Max(260, styleGroup.Width - 32);
                 txtHardwareStyleName.Width = Math.Max(260, styleGroup.Width - 32);
                 styleApply.Width = Math.Max(260, styleGroup.Width - 32);
+                styleSave.Width = Math.Max(108, (styleGroup.Width - 44) / 2);
+                styleLoad.Left = styleSave.Right + 12;
+                styleLoad.Width = Math.Max(108, styleGroup.Width - styleLoad.Left - 16);
                 palette.Top = stacked ? styleGroup.Bottom + 20 : 58;
                 palette.Width = stacked ? available : Math.Max(480, available - palette.Left);
                 pnlPalettePreview.Width = Math.Max(430, palette.Width - 36);
@@ -2299,7 +2306,10 @@ namespace NeutronM693HardwareStudio
                         {
                             if (h != null && !string.IsNullOrWhiteSpace(h.Name) &&
                                 h.Mode >= 0 && h.Mode < 7 && h.Speed >= 1 && h.Speed <= 10 &&
-                                h.Brightness >= 1 && h.Brightness <= 10)
+                                h.Brightness >= 1 && h.Brightness <= 10 &&
+                                h.Red >= 0 && h.Red <= 255 &&
+                                h.Green >= 0 && h.Green <= 255 &&
+                                h.Blue >= 0 && h.Blue <= 255)
                                 _hardwareStyles.Add(h);
                         }
                     }
