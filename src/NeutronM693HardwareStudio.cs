@@ -281,7 +281,7 @@ namespace NeutronM693HardwareStudio
 
         public MainForm(bool smokeTest = false)
         {
-            Text = "Neutron M693 Hardware Studio 2.6.4 OEM STREAM RC1";
+            Text = "Neutron M693 Hardware Studio 2.6.5 RGB STUDIO RC1";
             Width = 1430;
             Height = 880;
             MinimumSize = new Size(930, 620);
@@ -2128,12 +2128,14 @@ namespace NeutronM693HardwareStudio
         {
             var page = new TabPage("RGB");
             tabs.TabPages.Add(page);
-            EnablePageScroll(page, 980, 720);
-            page.Controls.Add(new Label { Left = 15, Top = 15, Width = 900, Height = 40, Text = "Onboard RGB блок EEPROM 0xA0..0xA6. Зміни зберігаються в мишці." });
+            EnablePageScroll(page, 0, 730);
+            var rgbIntro = new Label { Left = 15, Top = 15, Width = 900, Height = 40,
+                Text = "M693: 7 апаратних режимів, один базовий RGB колір, швидкість і яскравість. Запис — тільки після ЗАСТОСУВАТИ." };
+            page.Controls.Add(rgbIntro);
 
             page.Controls.Add(new Label { Left = 30, Top = 75, Width = 150, Text = "Режим:" });
             cmbLedMode = new ComboBox { Left = 190, Top = 70, Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
-            cmbLedMode.Items.AddRange(new object[] { "Steady", "Breathing", "Streaming", "Neon", "Scrolling", "Color Breathing", "Off" });
+            cmbLedMode.Items.AddRange(new object[] { "Steady", "Breathing", "Streaming", "Neon", "Single color flow", "Colorful breathing", "Off" });
             cmbLedMode.SelectedIndex = 5;
             page.Controls.Add(cmbLedMode);
 
@@ -2148,17 +2150,36 @@ namespace NeutronM693HardwareStudio
             page.Controls.Add(new Label { Left = 30, Top = 205, Width = 150, Text = "Яскравість 1–10:" });
             numLedBrightness = new NumericUpDown { Left = 190, Top = 200, Width = 100, Minimum = 1, Maximum = 10, Value = 6 };
             page.Controls.Add(numLedBrightness);
+            page.Controls.Add(new Label { Left = 30, Top = 260, Width = 420, Height = 25,
+                Text = "АПАРАТНІ ПРЕСЕТИ: записують один вибраний колір" });
+            Color[] rgbPreset = { Color.Red, Color.Orange, Color.Lime, Color.Cyan, Color.Blue, Color.Magenta, Color.White };
+            for (int i = 0; i < rgbPreset.Length; i++)
+            {
+                Color chosen = rgbPreset[i];
+                var swatch = new Button { Left = 30 + i * 58, Top = 293, Width = 46, Height = 38,
+                    BackColor = chosen, FlatStyle = FlatStyle.Flat, Text = "" };
+                swatch.FlatAppearance.BorderColor = Color.FromArgb(102, 102, 110);
+                swatch.Click += delegate { SelectHardwareRgbColor(chosen, false); };
+                page.Controls.Add(swatch);
+            }
+            var steady = MakeButton("Постійний колір", 30, 354, 196, 34, delegate { SelectHardwareRgbMode(0); });
+            var breathing = MakeButton("Дихання кольором", 240, 354, 195, 34, delegate { SelectHardwareRgbMode(1); });
+            page.Controls.Add(steady);
+            page.Controls.Add(breathing);
+            var rgbInfo = new Label { Left = 30, Top = 400, Width = 410, Height = 67,
+                Text = "Після вибору кольору натисніть ЗАСТОСУВАТИ. Пресети не виконують фонових USB/EEPROM-записів. Ефект Colorful breathing вмикає вбудовану кольорову анімацію firmware." };
+            page.Controls.Add(rgbInfo);
 
             var palette = new GroupBox
             {
-                Left = 500, Top = 58, Width = 440, Height = 420,
+                Left = 500, Top = 58, Width = 510, Height = 515,
                 Text = "Neutron Palette Lab — кастомні сцени"
             };
             page.Controls.Add(palette);
             palette.Controls.Add(new Label
             {
-                Left = 15, Top = 28, Width = 405, Height = 54,
-                Text = "M693 onboard-блок 0xA0..0xA6 зберігає один базовий RGB-колір і фіксований firmware-ефект. Тут можна створити 2–8 кольорову сцену, зберігати її у профілі та попередньо переглядати."
+                Left = 15, Top = 28, Width = 485, Height = 54,
+                Text = "Створюйте сцену із 2–8 кольорів. Будь-який вибраний колір можна ОКРЕМО записати в мишку. Довільне переливання всієї палітри — лише прев'ю, доки не підтверджено RAM-команду."
             });
             lstPaletteColors = new ListBox { Left = 15, Top = 88, Width = 175, Height = 175 };
             palette.Controls.Add(lstPaletteColors);
@@ -2166,27 +2187,44 @@ namespace NeutronM693HardwareStudio
             btnPaletteRemove = MakeButton("− Видалити", 315, 88, 100, 30, delegate { PaletteRemoveColor(); });
             palette.Controls.Add(btnPaletteAdd);
             palette.Controls.Add(btnPaletteRemove);
-            palette.Controls.Add(new Label { Left = 205, Top = 132, Width = 100, Text = "Сцена:" });
-            cmbPaletteEffect = new ComboBox { Left = 205, Top = 152, Width = 210, DropDownStyle = ComboBoxStyle.DropDownList };
+            palette.Controls.Add(new Label { Left = 205, Top = 169, Width = 100, Text = "Сцена:" });
+            cmbPaletteEffect = new ComboBox { Left = 205, Top = 187, Width = 235, DropDownStyle = ComboBoxStyle.DropDownList };
             cmbPaletteEffect.Items.AddRange(new object[] { "Crossfade", "Ping-pong", "Step", "Breathing palette" });
             cmbPaletteEffect.SelectedIndex = 0;
             palette.Controls.Add(cmbPaletteEffect);
-            palette.Controls.Add(new Label { Left = 205, Top = 193, Width = 120, Text = "Період, мс:" });
-            numPalettePeriod = new NumericUpDown { Left = 315, Top = 188, Width = 100, Minimum = 100, Maximum = 10000, Increment = 100, Value = 1200 };
+            palette.Controls.Add(new Label { Left = 205, Top = 229, Width = 120, Text = "Період, мс:" });
+            numPalettePeriod = new NumericUpDown { Left = 335, Top = 225, Width = 105, Minimum = 100, Maximum = 10000, Increment = 100, Value = 1200 };
             palette.Controls.Add(numPalettePeriod);
-            btnPaletteUseFirst = MakeButton("1-й колір → onboard", 205, 230, 210, 32, delegate { PaletteUseFirstColor(); });
+            btnPaletteUseFirst = MakeButton("Вибраний колір → M693", 205, 261, 235, 36, delegate { PaletteUseFirstColor(); });
+            var editColor = MakeButton("Редагувати колір", 205, 130, 150, 30, delegate { PaletteEditSelectedColor(); });
+            var moveUp = MakeButton("↑", 363, 130, 35, 30, delegate { PaletteMoveColor(-1); });
+            var moveDown = MakeButton("↓", 405, 130, 35, 30, delegate { PaletteMoveColor(1); });
+            palette.Controls.Add(editColor); palette.Controls.Add(moveUp); palette.Controls.Add(moveDown);
             palette.Controls.Add(btnPaletteUseFirst);
-            pnlPalettePreview = new Panel { Left = 15, Top = 282, Width = 400, Height = 82, BorderStyle = BorderStyle.FixedSingle };
+            pnlPalettePreview = new Panel { Left = 15, Top = 319, Width = 475, Height = 110, BorderStyle = BorderStyle.FixedSingle };
             pnlPalettePreview.Paint += delegate(object sender, PaintEventArgs e) { DrawPalettePreview(e.Graphics, pnlPalettePreview.ClientRectangle); };
             palette.Controls.Add(pnlPalettePreview);
             palette.Controls.Add(new Label
             {
-                Left = 15, Top = 370, Width = 405, Height = 38,
-                Text = "Важливо: довільні 2/5-кольорові палітри зараз НЕ записуються як onboard-анімація — для цього потрібна ще не знайдена RAM-команда firmware. Часті EEPROM-записи для анімації навмисно не використовуються."
+                Left = 15, Top = 441, Width = 475, Height = 61,
+                Text = "Важливо: RGB палітра зберігається в JSON-профілі; апаратно з неї можна записати вибраний колір. Режими із прошивки працюють самостійно; довільні 2–5-кольорові переливання ще не підтримано."
             });
             _paletteColors.Add(Color.Magenta);
             _paletteColors.Add(Color.Cyan);
             RefreshPaletteList();
+            lstPaletteColors.SelectedIndex = 0;
+            lstPaletteColors.DoubleClick += delegate { PaletteEditSelectedColor(); };
+            page.Resize += delegate {
+                int available = Math.Max(360, page.ClientSize.Width - 36);
+                bool stacked = available < 1010;
+                palette.Left = stacked ? 15 : Math.Max(480, available / 2);
+                palette.Top = stacked ? 485 : 58;
+                palette.Width = stacked ? available : Math.Max(480, available - palette.Left);
+                pnlPalettePreview.Width = Math.Max(430, palette.Width - 36);
+                rgbIntro.Width = Math.Max(350, page.ClientSize.Width - 35);
+                page.AutoScrollMinSize = new Size(0, stacked ? palette.Bottom + 25 : 730);
+            };
+            page.PerformLayout();
         }
 
         private void PaletteAddColor()
