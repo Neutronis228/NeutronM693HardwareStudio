@@ -2268,6 +2268,175 @@ namespace NeutronM693HardwareStudio
             page.PerformLayout();
         }
 
+        private int SelectedHardwareStyleIndex()
+        {
+            if (cmbHardwareStyle == null) return -1;
+            int selected = cmbHardwareStyle.SelectedIndex;
+            return selected >= 0 && selected < _hardwareStyles.Count ? selected : -1;
+        }
+
+        private static string NormalizeRgbStyleName(string raw)
+        {
+            string s = (raw ?? "").Trim();
+            if (s.Length > 50) s = s.Substring(0, 50);
+            return s;
+        }
+
+        private void LoadHardwareLightingStyles()
+        {
+            _loadingHardwareStyles = true;
+            try
+            {
+                _hardwareStyles.Clear();
+                if (File.Exists(HardwareStylesFile))
+                {
+                    var json = new JavaScriptSerializer { MaxJsonLength = 1024 * 1024 };
+                    var loaded = json.Deserialize<List<HardwareLightingStyle>>(
+                        File.ReadAllText(HardwareStylesFile, Encoding.UTF8));
+                    if (loaded != null)
+                    {
+                        foreach (var h in loaded.Take(64))
+                        {
+                            if (h != null && !string.IsNullOrWhiteSpace(h.Name) &&
+                                h.Mode >= 0 && h.Mode < 7 && h.Speed >= 1 && h.Speed <= 10 &&
+                                h.Brightness >= 1 && h.Brightness <= 10)
+                                _hardwareStyles.Add(h);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Не вдалося прочитати бібліотеку RGB-стилів. Дані мишки не змінені.\r\n" +
+                    ex.Message, "M693 RGB", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                _loadingHardwareStyles = false;
+                RefreshHardwareStylesList();
+            }
+        }
+
+        private void PersistHardwareLightingStyles()
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(HardwareStylesFile));
+            var serializer = new JavaScriptSerializer { MaxJsonLength = 1024 * 1024 };
+            string json = serializer.Serialize(_hardwareStyles);
+            string temp = HardwareStylesFile + ".tmp";
+            File.WriteAllText(temp, json, new UTF8Encoding(false));
+            if (File.Exists(HardwareStylesFile)) File.Delete(HardwareStylesFile);
+            File.Move(temp, HardwareStylesFile);
+        }
+
+        private void RefreshHardwareStylesList()
+        {
+            if (cmbHardwareStyle == null) return;
+            _loadingHardwareStyles = true;
+            try
+            {
+                cmbHardwareStyle.Items.Clear();
+                foreach (var style in _hardwareStyles) cmbHardwareStyle.Items.Add(style.Name);
+                if (cmbHardwareStyle.Items.Count > 0) cmbHardwareStyle.SelectedIndex = 0;
+            }
+            finally { _loadingHardwareStyles = false; }
+        }
+
+        private void SaveHardwareLightingStyle()
+        {
+            string name = NormalizeRgbStyleName(txtHardwareStyleName.Text);
+            if (name.Length == 0)
+            {
+                MessageBox.Show(this, "Вкажіть назву стилю.", "M693 RGB");
+                return;
+            }
+            if (_hardwareStyles.Count >= 64 &&
+                !_hardwareStyles.Any(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageBox.Show(this, "Максимум 64 збережені стилі.", "M693 RGB");
+                return;
+            }
+            var style = new HardwareLightingStyle {
+                Name = name, Mode = cmbLedMode.SelectedIndex,
+                Red = _ledColor.R, Green = _ledColor.G, Blue = _ledColor.B,
+                Speed = (int)numLedSpeed.Value, Brightness = (int)numLedBrightness.Value
+            };
+            int index = _hardwareStyles.FindIndex(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (index >= 0) _hardwareStyles[index] = style;
+            else { index = _hardwareStyles.Count; _hardwareStyles.Add(style); }
+            try
+            {
+                PersistHardwareLightingStyles();
+                RefreshHardwareStylesList();
+                cmbHardwareStyle.SelectedIndex = index;
+                lblStatus.Text = "RGB-стиль збережено локально. Натисніть 'ЗАСТОСУВАТИ СТИЛЬ У M693'.";
+            }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, "RGB library write", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        }
+
+        private bool PrepareHardwareLightingStyle()
+        {
+            int i = SelectedHardwareStyleIndex();
+            if (i < 0)
+            {
+                MessageBox.Show(this, "Спочатку збережіть або виберіть стиль.", "M693 RGB",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return false;
+            }
+            var style = _hardwareStyles[i];
+            cmbLedMode.SelectedIndex = style.Mode;
+            _ledColor = Color.FromArgb(style.Red, style.Green, style.Blue);
+            numLedSpeed.Value = style.Speed;
+            numLedBrightness.Value = style.Brightness;
+            UpdateLedColorButton();
+            txtHardwareStyleName.Text = style.Name;
+            _dirtyLed = true;
+            RefreshEditState();
+            return true;
+        }
+
+        private void LoadHardwareLightingStyle()
+        {
+            if (PrepareHardwareLightingStyle())
+                lblStatus.Text = "Стиль підготовлено. Натисніть ЗАСТОСУВАТИ для запису RGB у мишку.";
+        }
+
+        private void DeleteHardwareLightingStyle()
+        {
+            int i = SelectedHardwareStyleIndex();
+            if (i < 0) return;
+            if (MessageBox.Show(this, "Видалити стиль '" + _hardwareStyles[i].Name + "'? Це не змінить мишку.",
+                "M693 RGB", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            _hardwareStyles.RemoveAt(i);
+            try { PersistHardwareLightingStyles(); RefreshHardwareStylesList(); }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, "RGB library delete", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        }
+
+        private void ApplyHardwareLightingStyle()
+        {
+            if (_pendingProfile == null || _originalProfile == null || !EnsureDevice()) return;
+            if (_dirtyDpi || _dirtySensor || _pendingComboSlots.Count > 0 || _pendingMacroSlots.Count > 0)
+            {
+                MessageBox.Show(this,
+                    "Є незбережені зміни не-RGB параметрів. Збережіть їх окремо або скасуйте. " +
+                    "Застосування RGB-стилю не повинно змінювати кнопки й макроси.",
+                    "M693 RGB", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            for (int i = 0; i < _originalProfile.Length; i++)
+            {
+                if (i >= M693Profile.AddrLed && i < M693Profile.AddrLed + 7) continue;
+                if (_originalProfile[i] != _pendingProfile[i])
+                {
+                    MessageBox.Show(this, "Є інші незбережені зміни профілю. " +
+                        "Спочатку застосуйте або скасуйте їх.",
+                        "M693 RGB", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+            if (!PrepareHardwareLightingStyle()) return;
+            ApplyToMouse(); // Existing proven backup, diff-write, and read-back.
+        }
+
         private void PaletteAddColor()
         {
             if (_paletteColors.Count >= 8)
@@ -3897,6 +4066,18 @@ namespace NeutronM693HardwareStudio
             for (int i = 0; i < b.Length; i++) b[i] = Convert.ToByte(s.Substring(i * 2, 2), 16);
             return b;
         }
+    }
+
+    // Local-only RGB scene definition. No arbitrary multi-color animation is stored onboard.
+    internal sealed class HardwareLightingStyle
+    {
+        public string Name { get; set; }
+        public int Mode { get; set; }
+        public int Red { get; set; }
+        public int Green { get; set; }
+        public int Blue { get; set; }
+        public int Speed { get; set; }
+        public int Brightness { get; set; }
     }
 
     internal sealed class ExportedProfile
