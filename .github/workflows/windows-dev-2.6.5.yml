@@ -25,7 +25,7 @@ jobs:
                  '/r:System.dll','/r:System.Core.dll','/r:System.Drawing.dll','/r:System.Windows.Forms.dll','/r:System.Web.Extensions.dll',
                  ('/out:'+(Join-Path (Get-Location) 'dist/NeutronM693HardwareStudio.exe')))
           if (Test-Path Assets/appico.ico) { $a += '/win32icon:Assets/appico.ico' }
-          $a += 'src/NeutronM693HardwareStudio.cs'
+          $a += (Join-Path (Get-Location) 'src\NeutronM693HardwareStudio.cs')
           & $csc @a 2>&1 | Tee-Object -FilePath dist/BUILD_LOG.txt
           if ($LASTEXITCODE -ne 0) { throw "CSC compile failed $LASTEXITCODE" }
           if (Test-Path Assets) { Copy-Item -Path Assets -Destination dist/Assets -Recurse -Force }
