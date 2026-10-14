@@ -2253,15 +2253,60 @@ namespace NeutronM693HardwareStudio
             RefreshPaletteList();
         }
 
+        // A palette is local metadata; the M693 hardware accepts one selected color at a time.
         private void PaletteUseFirstColor()
         {
-            if (_paletteColors.Count == 0) return;
-            _ledColor = _paletteColors[0];
+            int i = lstPaletteColors == null ? -1 : lstPaletteColors.SelectedIndex;
+            if (i < 0 || i >= _paletteColors.Count) {
+                MessageBox.Show(this, "Виберіть колір у палітрі.", "M693 RGB", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            SelectHardwareRgbColor(_paletteColors[i], true);
+        }
+
+        private void SelectHardwareRgbColor(Color color, bool forceSteady)
+        {
+            _ledColor = color;
             UpdateLedColorButton();
+            // OFF never lights up: using a preset enables Steady if necessary.
+            if (cmbLedMode.SelectedIndex == 6 || forceSteady) cmbLedMode.SelectedIndex = 0;
             _dirtyLed = true;
-            lblStatus.Text = "Перший колір Palette Lab підготовлено як onboard base RGB. Ще НЕ записано — натисніть Apply.";
             RefreshEditState();
+            lblStatus.Text = "Обраний RGB #" + color.R.ToString("X2") + color.G.ToString("X2") + color.B.ToString("X2") +
+                " підготовлено. Для запису у M693 натисніть ЗАСТОСУВАТИ.";
             lblStatus.ForeColor = Color.LightGreen;
+        }
+
+        private void SelectHardwareRgbMode(int mode)
+        {
+            cmbLedMode.SelectedIndex = mode;
+            _dirtyLed = true;
+            RefreshEditState();
+            lblStatus.Text = "RGB режим підготовлено. Натисніть ЗАСТОСУВАТИ.";
+        }
+
+        private void PaletteEditSelectedColor()
+        {
+            int i = lstPaletteColors == null ? -1 : lstPaletteColors.SelectedIndex;
+            if (i < 0 || i >= _paletteColors.Count) return;
+            using (var dialog = new ColorDialog { FullOpen = true, Color = _paletteColors[i] })
+                if (dialog.ShowDialog(this) == DialogResult.OK) {
+                    _paletteColors[i] = dialog.Color;
+                    RefreshPaletteList();
+                    lstPaletteColors.SelectedIndex = i;
+                }
+        }
+
+        private void PaletteMoveColor(int step)
+        {
+            int i = lstPaletteColors == null ? -1 : lstPaletteColors.SelectedIndex;
+            int target = i + step;
+            if (i < 0 || target < 0 || target >= _paletteColors.Count) return;
+            Color temp = _paletteColors[i];
+            _paletteColors[i] = _paletteColors[target];
+            _paletteColors[target] = temp;
+            RefreshPaletteList();
+            lstPaletteColors.SelectedIndex = target;
         }
 
         private void RefreshPaletteList()
