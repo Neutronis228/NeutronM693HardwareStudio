@@ -104,6 +104,22 @@ namespace NeutronM693HardwareStudio
             byte[] button = new byte[] { 0x06, 0x04, 0xFE, M693Profile.Checksum55(new byte[] { 0x06, 0x04, 0xFE }) };
             if (button.Length != 4 || button[3] != M693Profile.Checksum55(new byte[] { button[0], button[1], button[2] }))
                 throw new InvalidOperationException("Button map checksum failed");
+            // Reproducing the release-tail tradeoff: a full 20-click cycle may continue
+            // after releasing a HOLD button. A one-click cycle has only two events.
+            foreach (int n in new int[] { 1, 2, 3 })
+            {
+                int[] seq = n == 1 ? new int[] { 45 } :
+                    SmoothPatternGenerator.Generate(n, 10, 45, 150, 88, 2601 + n);
+                byte[] fast = MacroBuilder.BuildFullSlot(4, "QSTOP", 1, seq,
+                    new byte[] { 0x84, 1, 0 }, new byte[] { 0x44, 1, 0 });
+                ParsedMacro p = ParsedMacro.Parse(4, fast);
+                if (!p.ChecksumOk || p.EventCount != 2 * n ||
+                    fast[31] != 2 * n || fast[32] != 0x84 || fast[37] != 0x44)
+                    throw new InvalidOperationException("QuickStop macro round-trip failed: " + n);
+            }
+            byte[] fireAction = new byte[] { 4, 45, 0 };
+            if (M693Profile.Checksum55(fireAction) != (byte)(0x55 - 4 - 45))
+                throw new InvalidOperationException("Native FIRE profile checksum failed");
             Console.WriteLine("PROTOCOL SELF-TEST PASS; events=" + parsed.EventCount);
         }
 
