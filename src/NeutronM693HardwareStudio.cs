@@ -176,6 +176,8 @@ namespace NeutronM693HardwareStudio
         private NumericUpDown numTypical;
         private NumericUpDown numMax;
         private NumericUpDown numPatternClicks;
+        private ComboBox cmbStopStrategy;
+        private Label lblStopBound;
         private TrackBar trkSmooth;
         private Label lblSmooth;
         private Button btnGenerateMacro;
@@ -288,7 +290,7 @@ namespace NeutronM693HardwareStudio
 
         public MainForm(bool smokeTest = false)
         {
-            Text = "Neutron M693 Hardware Studio 2.6.6 HARDWARE RGB STYLES RC1";
+            Text = "Neutron M693 Hardware Studio 2.6.7 QUICK STOP RC1";
             Width = 1430;
             Height = 880;
             MinimumSize = new Size(930, 620);
@@ -1624,11 +1626,33 @@ namespace NeutronM693HardwareStudio
             grpMacro.Controls.Add(new Label { Left = 15, Top = y + 4, Width = 150, Text = "Максимум, мс:" });
             numMax = MakeNum(170, y, 150, 1, 2000);
             grpMacro.Controls.Add(numMax);
-            y += 42;
-            grpMacro.Controls.Add(new Label { Left = 15, Top = y + 4, Width = 150, Text = "Кліків у патерні:" });
-            numPatternClicks = new NumericUpDown { Left = 170, Top = y, Width = 120, Minimum = 5, Maximum = 24, Value = 20 };
-            grpMacro.Controls.Add(numPatternClicks);
             y += 40;
+            grpMacro.Controls.Add(new Label { Left = 15, Top = y + 4, Width = 150, Text = "Зупинка кліків:" });
+            cmbStopStrategy = new ComboBox { Left = 170, Top = y, Width = 220,
+                DropDownStyle = ComboBoxStyle.DropDownList };
+            cmbStopStrategy.Items.AddRange(new object[] {
+                "Нативний FIRE (на утримання)",
+                "HOLD — 1 клік / цикл",
+                "HOLD — 2 кліки / цикл",
+                "HOLD — 3 кліки / цикл",
+                "HOLD — вручну N кліків"
+            });
+            cmbStopStrategy.SelectedIndex = 1; // Shortest verified-format macro.
+            grpMacro.Controls.Add(cmbStopStrategy);
+            y += 38;
+            grpMacro.Controls.Add(new Label { Left = 15, Top = y + 4, Width = 150, Text = "Кліків / цикл:" });
+            numPatternClicks = new NumericUpDown { Left = 170, Top = y, Width = 120, Minimum = 1, Maximum = 24, Value = 1 };
+            grpMacro.Controls.Add(numPatternClicks);
+            cmbStopStrategy.SelectedIndexChanged += delegate { RefreshStopStrategyControls(); };
+            numPatternClicks.ValueChanged += delegate { RefreshStopStrategyControls(); };
+            numTypical.ValueChanged += delegate { RefreshStopStrategyControls(); };
+            numMax.ValueChanged += delegate { RefreshStopStrategyControls(); };
+            y += 34;
+            lblStopBound = new Label { Left = 15, Top = y, Width = 390, Height = 58,
+                Text = "Швидка зупинка: 1 клік / цикл." };
+            grpMacro.Controls.Add(lblStopBound);
+            RefreshStopStrategyControls();
+            y += 65;
             grpMacro.Controls.Add(new Label { Left = 15, Top = y + 2, Width = 110, Text = "Плавність:" });
             trkSmooth = new TrackBar { Left = 120, Top = y - 8, Width = 225, Minimum = 0, Maximum = 100, Value = 88, TickFrequency = 10 };
             lblSmooth = new Label { Left = 350, Top = y + 2, Width = 55, Text = "88%" };
@@ -1640,7 +1664,8 @@ namespace NeutronM693HardwareStudio
             btnGenerateMacro = MakeButton("Створити й прив'язати до вибраної кнопки", 15, y, 390, 36, delegate { GenerateAndBindMacro(); });
             grpMacro.Controls.Add(btnGenerateMacro);
             y += 48;
-            grpMacro.Controls.Add(new Label { Left = 15, Top = y, Width = 390, Height = 55, Text = "Режим: HOLD (код 254) — прошивка повторює патерн, поки фізична кнопка затиснута; після відпускання зупиняється. Windows-фоновий клікер не потрібен." });
+            grpMacro.Controls.Add(new Label { Left = 15, Top = y, Width = 390, Height = 57,
+                Text = "M693 може завершувати поточний цикл після відпускання. Для швидкої зупинки обирайте FIRE або HOLD із 1 кліком. Точно нульова затримка прошивкою не гарантована." });
             y += 62;
             txtPreview = new TextBox { Left = 15, Top = y, Width = 390, Height = 105, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
             grpMacro.Controls.Add(txtPreview);
@@ -1650,10 +1675,13 @@ namespace NeutronM693HardwareStudio
             pnlMacroGraph = new Panel { Left = 15, Top = y, Width = 390, Height = 82, BorderStyle = BorderStyle.FixedSingle };
             pnlMacroGraph.Paint += delegate(object sender, PaintEventArgs e) { DrawMacroGraph(e.Graphics, pnlMacroGraph.ClientRectangle); };
             grpMacro.Controls.Add(pnlMacroGraph);
+            grpMacro.Height += 112;
             grpMacro.Resize += delegate
             {
                 int inner = Math.Max(300, grpMacro.ClientSize.Width - 30);
                 cmbMacroClick.Width = Math.Min(220, Math.Max(150, inner - 170));
+                cmbStopStrategy.Width = Math.Min(270, Math.Max(140, inner - 170));
+                lblStopBound.Width = Math.Max(260, inner);
                 trkSmooth.Width = Math.Max(130, inner - 170);
                 lblSmooth.Left = Math.Min(grpMacro.ClientSize.Width - 60, 120 + trkSmooth.Width + 5);
                 btnGenerateMacro.Width = inner;
@@ -3360,11 +3388,27 @@ namespace NeutronM693HardwareStudio
             }
         }
 
+
+        private void RefreshStopStrategyControls()
+        {
+            if (cmbStopStrategy == null || numPatternClicks == null || numTypical == null) return;
+            int mode = cmbStopStrategy.SelectedIndex;
+            numPatternClicks.Enabled = mode == 4;
+            decimal count = mode == 0 || mode == 1 ? 1 : mode == 2 ? 2 : mode == 3 ? 3 : numPatternClicks.Value;
+            int bound = (int)count * (int)numMax.Value;
+            if (lblStopBound != null)
+                lblStopBound.Text = mode == 0
+                    ? "FIRE: функція швидкого автокліку прошивки, без випадкових інтервалів. Припинення після відпускання потрібно перевірити на M693."
+                    : "Орієнтовна верхня межа залишку циклу: до " + bound +
+                      " мс (" + count + " кліків × Max). Реальна реакція залежить від firmware.";
+        }
+
         private void GenerateAndBindMacro()
         {
             if (_pendingProfile == null) return;
-            var pb = SelectedPhysicalButton();
+            PhysicalButtonSpec pb = SelectedPhysicalButton();
             if (pb == null) { MessageBox.Show(this, "Спочатку виберіть фізичну кнопку."); return; }
+
             int min = (int)numMin.Value;
             int typ = (int)numTypical.Value;
             int max = (int)numMax.Value;
@@ -3374,36 +3418,72 @@ namespace NeutronM693HardwareStudio
                 return;
             }
 
+            if (cmbStopStrategy.SelectedIndex == 0)
+            {
+                // The documented onboard FIRE action has repeat=0 to fire while held.
+                // Unlike a macro it has no long scripted cycle to finish.
+                // It uses fixed frequency, NOT smoothly varying timing.
+                int rate = Math.Max(3, Math.Min(255, typ));
+                byte[] former = M693Profile.GetButtonRecord(_pendingProfile, pb.Slot);
+                if (former[0] == 6 && _pendingMacroSlots.ContainsKey(former[1]))
+                {
+                    int pending = former[1];
+                    _pendingMacroSlots.Remove(pending);
+                    _explicitMacroWrites.Remove(pending);
+                    byte[] existing;
+                    if (_macroSlots.TryGetValue(pending, out existing))
+                        _parsedMacros[pending] = ParsedMacro.Parse(pending, existing);
+                    else
+                        _parsedMacros.Remove(pending);
+                }
+                M693Profile.SetButtonAction(_pendingProfile, pb.Slot, new byte[] { 4, (byte)rate, 0 });
+                _lastMacroIntervals = new int[0];
+                if (pnlMacroGraph != null) pnlMacroGraph.Invalidate();
+                txtPreview.Text =
+                    "Режим: апаратний FIRE, кнопка #" + pb.Number + Environment.NewLine +
+                    "Швидкість: " + rate + " (параметр OEM Fire speed)" + Environment.NewLine +
+                    "Повтор: 0 — поки утримують." + Environment.NewLine +
+                    "Жоден Macro slot не перезаписується. Інтервал фіксований." + Environment.NewLine +
+                    "Це гіпотеза про найшвидшу реакцію на відпускання; перевірте на фізичній M693.";
+                RefreshButtonGrids(); RefreshDashboard(); RefreshEditState();
+                lblStatus.Text = "FIRE підготовлено. Натисніть ЗАСТОСУВАТИ, потім перевірте зупинку.";
+                return;
+            }
+
             int macroSlot = ChooseMacroSlot(pb);
             if (macroSlot < 0)
             {
                 MessageBox.Show(this, "Немає вільного macro slot 0..15.");
                 return;
             }
-
             int clickMask = cmbMacroClick.SelectedIndex == 1 ? 2 : 1;
-            int patternClicks = numPatternClicks == null ? 29 : (int)numPatternClicks.Value;
-            int[] intervals = SmoothPatternGenerator.Generate(patternClicks, min, typ, max, trkSmooth.Value, Environment.TickCount ^ (pb.Number << 12));
-            byte[] downTemplate;
-            byte[] upTemplate;
+            int patternClicks = cmbStopStrategy.SelectedIndex == 1 ? 1 :
+                cmbStopStrategy.SelectedIndex == 2 ? 2 :
+                cmbStopStrategy.SelectedIndex == 3 ? 3 : (int)numPatternClicks.Value;
+            int[] intervals = patternClicks == 1
+                ? new int[] { typ }
+                : SmoothPatternGenerator.Generate(patternClicks, min, typ, max, trkSmooth.Value,
+                    Environment.TickCount ^ (pb.Number << 12));
+            byte[] downTemplate, upTemplate;
             string templateSource;
             FindMouseMacroEventTemplate(clickMask, out downTemplate, out upTemplate, out templateSource);
-            byte[] macro = MacroBuilder.BuildFullSlot(macroSlot, "NEUTRON_B" + pb.Number + (clickMask == 1 ? "_L" : "_R"), clickMask, intervals, downTemplate, upTemplate);
+            byte[] macro = MacroBuilder.BuildFullSlot(macroSlot,
+                "NEUTRON_B" + pb.Number + (clickMask == 1 ? "_L" : "_R"),
+                clickMask, intervals, downTemplate, upTemplate);
             _pendingMacroSlots[macroSlot] = macro;
             _parsedMacros[macroSlot] = ParsedMacro.Parse(macroSlot, macro);
             _lastMacroIntervals = intervals.ToArray();
             if (pnlMacroGraph != null) pnlMacroGraph.Invalidate();
-
             M693Profile.SetButtonAction(_pendingProfile, pb.Slot, new byte[] { 6, (byte)macroSlot, 254 });
-            RefreshButtonGrids();
-            RefreshDashboard();
+            RefreshButtonGrids(); RefreshDashboard(); RefreshEditState();
             txtPreview.Text = "Macro slot: " + macroSlot + Environment.NewLine +
-                "Подій: " + (intervals.Length * 2) + " (" + intervals.Length + " кліків у патерні)" + Environment.NewLine +
-                "Event template: " + templateSource + Environment.NewLine +
+                "HOLD / фізична кнопка #" + pb.Number + Environment.NewLine +
+                "Подій: " + (intervals.Length * 2) + " (" + intervals.Length + " кліків / цикл)" + Environment.NewLine +
+                "Шаблон подій: " + templateSource + Environment.NewLine +
                 "Інтервали, мс: " + string.Join(", ", intervals.Select(x => x.ToString()).ToArray()) + Environment.NewLine +
-                "Після останнього значення прошивка плавно переходить до початку патерна і повторює, поки кнопка затиснута.";
-            lblStatus.Text = "Smooth Macro підготовлено. Ще НЕ записано — натисніть Apply.";
-            RefreshEditState();
+                "Час циклу: " + intervals.Sum() + " мс. Після відпускання можливе завершення циклу до його межі." +
+                Environment.NewLine + "Для найкоротшого залишку оберіть HOLD 1 клік.";
+            lblStatus.Text = "QuickStop HOLD підготовлено. Натисніть ЗАСТОСУВАТИ.";
         }
 
         private void DrawMacroGraph(Graphics g, Rectangle r)
