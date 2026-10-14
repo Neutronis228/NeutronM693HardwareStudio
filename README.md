@@ -1,3 +1,12 @@
+## Latest development — v2.6.6 Hardware RGB Styles (2026-10-14)
+
+**Windows CI: SUCCESS** — [compile + protocol self-test + WinForms smoke test](https://github.com/Neutronis228/NeutronM693HardwareStudio/actions/runs/38597118566). [Development branch](https://github.com/Neutronis228/NeutronM693HardwareStudio/tree/development/v2.6.6-hardware-rgb-styles) · [PR #6](https://github.com/Neutronis228/NeutronM693HardwareStudio/pull/6).
+
+- User physically verified **v2.6.4 OEM-stream macro programming** on M693 side button 4; this macro code is unchanged.
+- New: save up to 64 **named real-device RGB styles** (a user RGB color + 1 built-in firmware effect + speed + brightness), choose one and apply with the protected backup/diff-write/read-back workflow.
+- **Limitation:** an arbitrary 2–5-color user-defined hardware gradient is **not yet supported/proven**. The 2022 OEM EEPROM record `0xA0–0xA6` holds **one base color**, not a list. Stock multi-color modes use firmware-internal palettes; the app's multi-color Palette Lab is preview-only.
+- No repeated EEPROM writes for animation. Hardware RGB color tests are still pending; 2.6.6 is a release candidate, not stable.
+
 ## Latest Windows-tested development build — 2.6.3 (not hardware-stable)
 
 **Windows CI SUCCESS:** compiled EXE, protocol self-test, and no-device UI smoke test. [View build](https://github.com/Neutronis228/NeutronM693HardwareStudio/actions/runs/38410448116).
